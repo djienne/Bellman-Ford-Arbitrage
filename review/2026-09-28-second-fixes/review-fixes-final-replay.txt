@@ -1,0 +1,3 @@
+time="2026-09-28T23:46:17+02:00" level=warning msg="Found orphan containers (bellman-review-smoke) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container bellman-hyperliquid-screener-run-11edf8ec3773 Creating 
+ Container bellman-hyperliquid-screener-run-11edf8ec3773 Created 

@@ -1,0 +1,21 @@
+[a] symbols=51 currencies=24 cycles: len3=84 len4=458 total=542
+    ticks=661675 recorded_span=599.0s ticks/s=1104.6; analysis window from first complete cycle: 598.4s, 661541 ticks
+    ticks/symbol min=26 (DOGEBTC) median=6094 max=86510 (BTCUSDT)
+    median spread bps, widest 6: DOGEBTC 88.9, HBARBTC 65.1, HBARBNB 26.7, LINKETH 23.1, TAOBTC 22.1, UNIBTC 18.9; symbols with median spread <1bps: 16
+    never quoted: []; all symbols quoted after 8.41s
+[b] best GROSS cycle return (bps, per tick): p50=1.78 p90=3.41 p99=6.64 p99.9=7.35 max=16.15  min=-0.00
+    frac ticks best gross>0: 0.9999; time-frac: 1.0000
+    cycle that is best-gross most often: BTC->ZEC->USDT->SOL->BTC 0.10, BNB->ETH->USDC->USDT->BNB 0.06, BTC->USDC->USDT->SOL->BTC 0.04
+    max-gross tick: BTC->HBAR->USDT->BTC 16.15bps oldest_leg_age=4ms size=4USDT legs=HBARBTC buy@ask 1.54e-06 $6127 1ms; HBARUSDT sell@bid 0.12939 $4 0ms; BTCUSDT buy@ask 83883.93 $1549 4ms
+    best-gross cycle, every 50th tick (n=13231): size_usdt p50=296.42 p90=3005.73 p99=23959.63 p99.9=40055.68 max=48639.64; oldest_leg_age_ms p50=701.32 p90=5423.36 p99=29910.83 p99.9=43298.59 max=43557.13
+[c] f=10bps: best net p50=-28.66 p90=-27.12 p99=-23.46 p99.9=-23.09 max=-13.87; >0bps: ticks=0.00000 time=0.00000; >5bps: ticks=0.00000 time=0.00000
+    per-cycle episodes=0 (censored at end=0, distinct cycles=0); duration ms: n/a
+    any-cycle episodes=0; duration ms: n/a
+[c] f=7.5bps: best net p50=-21.16 p90=-19.62 p99=-15.95 p99.9=-15.58 max=-6.36; >0bps: ticks=0.00000 time=0.00000; >5bps: ticks=0.00000 time=0.00000
+    per-cycle episodes=0 (censored at end=0, distinct cycles=0); duration ms: n/a
+    any-cycle episodes=0; duration ms: n/a
+[e] crossed(b>a)=0 locked(b==a)=0 nonpositive_px=0 recv_time_backsteps=4 updateId_non_increasing=0
+    2-cycle buy@ask->sell@bid max over all ticks = -0.001 bps (must be <=0 unless crossed)
+    independent pure-python full recompute at 664 ticks: max |diff| = 0.000e+00 (log units)
+    hand triangle USDT->ETH->BTC->USDT: hand=-3.816824 bps code=-3.816824 bps diff=5.75e-12
+    hand triangle USDT->BTC->ETH->USDT: hand=0.669642 bps code=0.669642 bps diff=1.70e-11

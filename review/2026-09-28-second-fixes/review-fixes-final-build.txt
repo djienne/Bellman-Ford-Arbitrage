@@ -1,0 +1,84 @@
+ Image bellman-hyperliquid:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 582B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 772B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/rust:1.92-bookworm
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#4 DONE 0.5s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 79B done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 16.68kB done
+#6 DONE 0.0s
+
+#7 [runtime 1/6] FROM docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+#7 resolve docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 0.0s done
+#7 DONE 0.0s
+
+#8 [build 1/8] FROM docker.io/library/rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
+#8 resolve docker.io/library/rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2 0.0s done
+#8 DONE 0.0s
+
+#9 [build 2/8] WORKDIR /app
+#9 CACHED
+
+#10 [build 3/8] COPY Cargo.toml Cargo.lock ./
+#10 CACHED
+
+#11 [build 4/8] COPY src ./src
+#11 DONE 0.0s
+
+#12 [build 5/8] COPY tests ./tests
+#12 DONE 0.1s
+
+#13 [build 6/8] COPY review/hyperliquid_spot_snapshot.json ./review/hyperliquid_spot_snapshot.json
+#13 DONE 0.1s
+
+#14 [build 7/8] RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo build --release --locked && cp target/release/bellman-arb /usr/local/bin/bellman-arb
+#14 0.373    Compiling bellman-arb v0.2.0 (/app)
+#14 13.55     Finished `release` profile [optimized] target(s) in 13.29s
+#14 DONE 13.6s
+
+#15 [build 8/8] RUN sha256sum src/*.rs Cargo.toml Cargo.lock > SOURCE_SHA256
+#15 DONE 0.4s
+
+#16 [runtime 2/6] WORKDIR /app
+#16 CACHED
+
+#17 [runtime 3/6] COPY --from=build /etc/ssl/certs /etc/ssl/certs
+#17 CACHED
+
+#18 [runtime 4/6] COPY --from=build /usr/local/bin/bellman-arb /usr/local/bin/bellman-arb
+#18 DONE 0.1s
+
+#19 [runtime 5/6] COPY --from=build /app/SOURCE_SHA256 ./SOURCE_SHA256
+#19 DONE 0.1s
+
+#20 [runtime 6/6] COPY config.toml ./config.toml
+#20 DONE 0.1s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 0.3s done
+#21 exporting manifest sha256:8b9447c120c7666a1200efa847b718133278965a9a3d704ecbc9c87bc1e52c70 0.0s done
+#21 exporting config sha256:539a3ccc3937430a240defeae19d026e301a2e6c87fe6a372fa9880505e01743 0.0s done
+#21 exporting attestation manifest sha256:32aa80ba167005843f56a649e218d23bd95cf5f10e54378da1cbc723c48a3a08 0.0s done
+#21 exporting manifest list sha256:f27cb87991c15909fcbd4dbafcb0d6afec7ac93ba044cae1d5be392f305bcd8c
+#21 exporting manifest list sha256:f27cb87991c15909fcbd4dbafcb0d6afec7ac93ba044cae1d5be392f305bcd8c 0.0s done
+#21 naming to docker.io/library/bellman-hyperliquid:local done
+#21 unpacking to docker.io/library/bellman-hyperliquid:local 0.1s done
+#21 DONE 0.6s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.0s
+ Image bellman-hyperliquid:local Built 

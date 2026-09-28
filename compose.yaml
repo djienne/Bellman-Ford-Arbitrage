@@ -1,0 +1,28 @@
+name: bellman-hyperliquid
+services:
+  screener:
+    cpus: 1
+    image: bellman-hyperliquid:local
+    build: .
+    container_name: bellman-hyperliquid-screener
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    volumes:
+      - ./runs:/app/runs
+      - ./config.toml:/app/config.toml:ro
+    mem_limit: 512m
+  check:
+    image: rust:1.92-bookworm
+    profiles: [tools]
+    working_dir: /app
+    volumes:
+      - .:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/build
+    environment:
+      CARGO_TARGET_DIR: /build
+    command: [cargo, test, --release, --locked]
+volumes:
+  cargo-registry:
+  cargo-target:

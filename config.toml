@@ -1,0 +1,24 @@
+# Public Hyperliquid spot only. Decimal quantities and bps are strings.
+min_cycle_len = 3
+max_cycle_len = 6
+max_cycles = 200000
+starting_usdc = "10000"
+amounts_usdc = ["25", "100", "250", "1000"]
+latency_ms = [100, 250, 500] # EACH way; 250 outbound + 250 confirmation is primary
+min_profit_bps = "5"
+dust_limit_usdc = "10" # Confirmed, untradeable residuals; never spendable cash.
+taker_fee_bps = "7"
+aligned_quote_token_ids = [] # Only verified fee classifications belong here.
+slippage_bps = "2"
+unwind_slippage_bps = "50"
+quote_age_ms = 1000
+depth_age_ms = 1000
+l2_fast = true # Faster snapshots, five levels per side; fills use only received depth.
+socket_timeout_secs = 30
+channel_capacity = 4096
+record_limit_bytes = 53687091200
+rotate_bytes = 268435456
+rotate_secs = 3600
+
+[fee_overrides_bps]
+# Keys are actual spot coins, e.g. "@107". No account discounts assumed.

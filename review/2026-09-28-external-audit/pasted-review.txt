@@ -1,0 +1,33 @@
+I made no edits to the project. I ran two replays in throwaway containers, and a helper parsed the recorded feed data; all output went to my scratch folder.
+
+Bottom line: the code is careful, but the result is economic: no edge. The engine's cycle returns matched an independent recalculation to within 0.22 bps on every route that could be priced. Re-running the verified replay of the smoke run gave an identical result. Over 48 minutes live plus the 10-minute smoke run, the best cycle after fees was −10.5 bps even with no freshness filter (−12.3 bps with the 1-second filter), and was never above zero. Every cycle needs at least two full 7-bps taker legs plus a 1.4-bps stablecoin leg, so fees alone cost about 15 bps. That matches this morning's Binance result. The fixes below improve measurement quality; they are unlikely to change that conclusion.
+
+Problems that distort the measurements
+
+1. The freshness rule doesn't match how Hyperliquid's feed works (book.rs:174-207, hyperliquid.rs:86-91)
+   - The bbo channel only sends when the bes market is unchanged, not stale. 12 of the 29 markets sent no bbo message at all in 48 minutes.
+   - The default l2Book feed is a snapshot of all 29 markets pushed together every ~5.4 s. A 1-second depth limit therefore passes only 18.6% of the time
+   - For HYPE, the depth snapshot matched the current best bid/ask only 4.6% of the time. Any paper trade would mostly end "unobservable".
+   - Fix: subscribe with fast: true (about 0rliquid docs and a live probe).
+2. 180 of the 210 routes are dead. They pass through nine USDH-quoted markets whose books were empty in every           snapshot, with zero volume. That is exactonly 30 routes with prices. Some of theremaining 30 also use junk books (@152, @212). Empty markets should be dropped at discovery.
+3. The fill model ignores feed delay (paper.rs:162-171). An order arriving at time t is filled against the book this machine had received by t, which is the exchange's book one feed delay earlier. That flatters opportunities that are fading. Fix: fill against the book received at confirmation time. That adds no look-ahead, because the fill is only revealed then.                                                                                               4. Size estimates are biased low, badly at s66, 218-222, 270-273).
+   - The fee is charged in the received token, so a buy leaves "N lots minus a tiny fee", and the next sell rounds down to N−1 lots.                                                                                                  - The leftover lot is valued at zero. Forth about $0.85, which costs roughly 350 bpsat 25 USDC and about 9 bps at 1,000 USDC.
+   - The 25/100/250 USDC sizes can almost never clear the 5-bps entry threshold. Better: value leftovers at the bid,      in a separate field.
+5. Each leg waits for confirmation before the next, so a triangle takes at least 1.5 s. This mostly measures the risk of holding one leg while the next is pending. That only matters if a profitable price ever appears.
+
+Problems that threaten the 7-day collection
+                                                                                                                     6. It won't come back after a reboot or Dockrt policy is on-failure, a clean shutdownexits with code 0, and bellman_ford isn't in folder_list.txt. Fix: use unless-stopped, or add it to folder_list.txt.                                                                                                  7. Paper accounts pause forever. Nothing in
+   - Any unwind leaves leftover tokens (point 4), which pauses the account (paper.rs:310-316).                          - A stop or restart during an open trade 7).
+   - Three failures would end paper trading for the rest of the collection.
+   - The tests miss this because they use zero fees, zero slippage and 10-second freshness (tests/research.rs:13-22).
+8. Any code fix will break restarts. On startup the program replays the previous run and requires identical results (main.rs:88). Changed logic fails that check, and on-failure then restarts it in a loop with no alert. A change to Hyperliquid's market list does the same (main.rs:91-102). Better: restore balances from final.json when the last     run shut down cleanly.
+9. Storage and recovery time are fine. Recording runs about 1.8 GB/day, so the 50 GiB cap is about 4 weeks away and the disk has 332 GB free. Replay runs at about 16 MB/s, so restoring after 7 days takes about 13 minutes.         
+Smaller issues                                                                                                       
+- main.rs:211-213 together with hyperliquid.rs:112: after a corrupt frame, the reconnect request is stored as a pending signal, so the next connection drops immediately once.
+- main.rs:204: if complete_step errors, the program exits without writing the Stop record or final.json.
+- hot.rs:255: the 50 ms timer tick delays each confirmation by up to 50 ms. That delay is recorded as real processing time.                                                                                                              - replay can't lower min_profit_bps. No pape there is currently no way to force tradesthrough the execution code on real data.
+- The separate fast "hot" path could be deleted: engine.rs:424-435 already computes the same returns. Its 2 µs of      compute is tiny next to the 500 ms of simuhe PRD requires it.
+- Leftover clutter: compose.yml.bak, and 946 MB in target/.                                                          
+Another Claude session is working in this project right now. At 22:10 it added examples/depth_probe.rs and runs/depth-probe-1790626223/, and left a stopped bellman-depth-probe container behind. That wasn't me or my helper; its probe is the source of the fast: true numbers.
+
+Since there's still no measured edge, do you want to pursue fixes at all? If yes, I'd do them in this order: restart policy (6), fast: true (1), dropping dead ma pause (7). If not, the collection can keeprunning as it is; the economic answer won't really change.

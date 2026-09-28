@@ -1,0 +1,10 @@
+[
+  {
+    "sample": "live",
+    "max_rerun_difference_bps": 9.094947017729282E-13
+  },
+  {
+    "sample": "smoke",
+    "max_rerun_difference_bps": 2.2737367544323206E-13
+  }
+]

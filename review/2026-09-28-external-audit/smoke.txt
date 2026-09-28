@@ -1,0 +1,215 @@
+# run C:/Users/david/Desktop/freqtrade/bellman_ford/runs/smoke-final/run-1790622687314035991
+# bytes read 11880042 / limit 11880042; records 25829 {'Clock': 12000, 'Open': 2, 'Frame': 13825, 'Close': 1, 'Stop': 1}; span 599.9s; connected 597.9s
+# seq gaps 0 dups 0; generation backsteps 0; receipt_ns backsteps 14; process_ns backsteps 0; stale-gen frames 0
+# opens [(12, 1, 529165414), (13089, 2, 302145966129)]
+# closes [(13056, 1, 300530244318, 'controlled smoke reconnect'), (25829, 2, 600001620656, 'bounded run complete')]
+# frames older than other channel (engine would drop): {'l2Book': 3}
+# receipt_ns backstep magnitudes ms (file order): max 0.018; utc backsteps (seq, ms): [(19926, 155.238544), (21188, 10.645147)]
+# l2Book distinct exchange times 126; frames per distinct time: [(29, 110), (2, 4), (3, 4), (1, 3), (6, 2)]
+# l2Book arrivals with a prior bbo: {'n': 1600, 'eq': 1596, 'l2_newer': 1597, 'neq_newer': 2}
+coin      pair         | bbo: n  rx_med rx_p90 rx_max  ex_med  same%  sameN% lat_med | l2: n  rx_med rx_p90 rx_max ex_med same% sameTop% lat_med | crossed/locked/empty/badsz b ; l2
+@107      HYPE/USDC    |   2197     176     576    7191     191   0.00   0.00    424 |    114    5343    5554   12673    5387   0.00   0.88    507 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@142      UBTC/USDC    |   2215     136     618    8305     135   0.00   0.00    420 |    114    5343    5554   12673    5387   0.00   0.88    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@150      USDE/USDC    |      0     nan     nan       0     nan   0.00   0.00    nan |    114    5342    5554   12673    5387 100.00 100.00    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@151      UETH/USDC    |   2454     138     530    7025     136   0.00   0.00    417 |    114    5341    5553   12673    5387   0.00   0.00    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@152      USDXL/USDC   |     67    2989    8058  163689    3198   0.00   0.00    504 |    114    5341    5553   12673    5387  66.37  66.37    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@166      USDT0/USDC   |     90    3109   17412   25429    3152   0.00   0.00    397 |    113    5344    5554   12673    5388  41.96  54.46    504 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@182      XAUT0/USDC   |    150     890    6976   58351     906   0.00   0.00    451 |    113    5341    5554   12673    5388  25.00  55.36    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@207      HYPE/USDT0   |    847     369    1688   13256     398   0.00   0.00    423 |    113    5341    5554   12673    5388   0.89   2.68    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@209      XAUT0/USDT0  |     21    7703   30799  268665    7704   0.00   0.00    372 |    113    5343    5555   12674    5388  86.61  88.39    508 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@210      UXPL/USDC    |   1090     281    1392    9201     285   0.00   0.00    410 |    113    5343    5555   12673    5387   0.00   1.79    504 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@212      LINK0/USDT0  |      0     nan     nan       0     nan   0.00   0.00    nan |    113    5343    5598   12673    5387 100.00 100.00    509 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@213      LINK0/USDC   |     87    2859   23870   35256    2758   0.00   0.00    382 |    113    5333    5598   12733    5387  18.75  56.25    521 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@230      USDH/USDC    |      0     nan     nan       0     nan   0.00   0.00    nan |    113    5331    5641   12500    5387 100.00 100.00    548 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@232      HYPE/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    113    5331    5641   12500    5387 100.00 100.00    548 | 0/0/0/0 ; 0/0/113/0 exback 0/0 sameex 0/0
+@233      UXPL/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5331    5646   12500    5388 100.00 100.00    549 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@234      UBTC/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5329    5646   12500    5388 100.00 100.00    549 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@235      UETH/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5329    5646   12500    5388 100.00 100.00    549 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@244      USDXL/USDT0  |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5333    5646   12500    5388 100.00 100.00    550 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@250      KHYPE/USDH   |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5333    5646   12500    5388 100.00 100.00    550 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@254      KNTQ/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5333    5646   12500    5388 100.00 100.00    549 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@255      HYPE/USDE    |    150     813   12120   29258     798   0.00   0.00    413 |    112    5333    5674   12500    5388   8.11  47.75    552 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@267      FXRP/USDC    |    501     439    3033   15779     410   0.00   0.00    436 |    112    5317    5646   12500    5388  12.61  13.51    600 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@275      FXRP/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5324    5644   12500    5388 100.00 100.00    602 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@283      CFX0/USDH    |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5332    5643   12500    5388 100.00 100.00    604 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@294      HPL/USDH     |      0     nan     nan       0     nan   0.00   0.00    nan |    112    5332    5643   12500    5388 100.00 100.00    602 | 0/0/0/0 ; 0/0/112/0 exback 0/0 sameex 0/0
+@334      KNTQ/USDC    |    321     420    5081   28317     406   0.00   0.00    443 |    112    5324    5643   12500    5388   4.50  31.53    639 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@335      HPL/USDC     |      9     802   10840   16756     684   0.00   0.00    387 |    112    5334    5633   12500    5388  95.50  95.50    678 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@336      KHYPE/USDC   |    119     973   13684   83257     948   0.00   0.00    363 |    112    5334    5633   12500    5388  41.44  60.36    678 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+@370      CFX0/USDC    |     94    3332   10198   35317    3379   0.00   0.00    393 |    112    5334    5633   12500    5388  49.55  54.05    684 | 0/0/0/0 ; 0/0/0/0 exback 0/0 sameex 0/0
+
+coin      | %conn: bbo<=1s dep<=1s eq(lastknown) bothfresh&eq latest<=1s engine_depth_ok | disagree eps n med p90 max(s) end_by | l2 gaps w/ bbo changes: n, med gap s, max gap s, max bbo chg
+@107      |   88.5   18.7    7.8    4.2   90.3    6.1 |   128   5.02   5.39    12.4 {'bbo': 16, 'l2Book': 111, 'session_end': 1} | 112 5.34 12.7 39
+@142      |   83.6   18.7    9.8    4.7   86.0    7.1 |   144   4.75   5.32    12.4 {'l2Book': 112, 'bbo': 30, 'session_end': 2} | 112 5.34 12.7 44
+@150      |    0.0   18.7    0.0    0.0   18.7   18.7 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@151      |   88.3   18.7    6.5    3.9   89.6    5.2 |   124   5.05   5.40    12.4 {'l2Book': 112, 'bbo': 10, 'session_end': 2} | 112 5.34 12.7 46
+@152      |   10.8   18.7   36.8    0.9   27.1   17.2 |    39   3.77   5.11     5.3 {'l2Book': 38, 'bbo': 1} | 36 5.35 8.7 4
+@166      |   13.3   18.5   62.4    0.7   29.3   16.6 |    52   4.25   5.14     5.6 {'l2Book': 51, 'bbo': 1} | 50 5.36 6.6 6
+@182      |   18.3   18.5   69.1    1.3   33.5   16.5 |    52   3.61   5.18    12.2 {'bbo': 3, 'l2Book': 49} | 50 5.35 12.7 8
+@207      |   60.5   18.5   19.8    3.9   66.4    9.8 |   115   4.63   5.33    12.1 {'l2Book': 108, 'bbo': 6, 'session_end': 1} | 108 5.34 12.7 20
+@209      |    3.2   18.5   50.3    0.1   21.3   18.2 |    16   2.63   4.90     5.1 {'l2Book': 13, 'bbo': 3} | 12 5.36 5.7 3
+@210      |   71.0   18.5   13.8    4.6   75.4    9.0 |   114   4.82   5.28    12.5 {'l2Book': 109, 'bbo': 4, 'session_end': 1} | 109 5.34 12.7 23
+@212      |    0.0   18.4    0.0    0.0   18.4   18.4 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@213      |   11.1   18.4   70.4    0.8   26.9   16.7 |    48   3.86   5.08     5.3 {'l2Book': 48} | 47 5.33 6.6 6
+@230      |    0.0   18.4    0.0    0.0   18.4   18.4 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@232      |    0.0   18.4    0.0    0.0   18.4   18.4 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@233      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@234      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@235      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@244      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@250      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@254      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@255      |   17.2   18.3   64.6    1.8   31.6   16.2 |    58   3.98   5.20     5.9 {'l2Book': 57, 'session_end': 1} | 57 5.34 8.7 6
+@267      |   44.2   18.4   28.9    2.2   53.2   11.2 |    98   4.58   5.38    12.5 {'l2Book': 95, 'bbo': 3} | 97 5.31 12.5 13
+@275      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@283      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@294      |    0.0   18.3    0.0    0.0   18.3   18.3 |     0    nan    nan     0.0 {} | 0 nan 0.0 0
+@334      |   27.2   18.3   40.9    0.9   38.3   12.0 |    76   4.93   5.35    12.5 {'l2Book': 74, 'bbo': 2} | 75 5.32 12.5 16
+@335      |    1.1   18.3   42.7    0.1   19.1   18.1 |     5   2.25   5.50     5.5 {'l2Book': 5} | 5 5.35 6.1 2
+@336      |   14.9   18.3   71.3    1.1   30.9   17.0 |    44   4.12   5.02     5.5 {'l2Book': 43, 'session_end': 1} | 43 5.33 6.1 7
+@370      |   13.9   18.3   56.9    0.8   29.2   16.1 |    55   3.33   5.26     5.5 {'l2Book': 50, 'bbo': 5} | 53 5.32 5.8 4
+
+# route-time fractions of connected time (A=bbo channel last-known, B=engine latest-of-bbo/l2 top; f = all legs age<=1s)
+{'A_allobs': 0.0, 'Af>0': 0.0, 'Af>5': 0.0, 'B_allobs': 0.0, 'Bf>0': 0.0, 'Bf>5': 0.0}
+
+## variant A: routes observed 6, routes ever >0 bps: 0, >5bps: 0
+107S>166B>207B           USDC -> USDT0 -> HYPE -> USDC                 max    -13.84 bps  t=   231.9s bottleneck~192.00 USDC
+      @166B bid 0.99946x237.05 ask 0.99947x258.48 age 14974ms
+      @207B bid 88.067x2.94 ask 88.121x2.18 age 0ms
+      @107S bid 88.088x794.52 ask 88.091x185.78 age 0ms
+107B>207S>166S           USDC -> HYPE -> USDT0 -> USDC                 max    -14.78 bps  t=   219.3s bottleneck~236.91 USDC
+      @107B bid 88.096x0.56 ask 88.097x46.53 age 0ms
+      @207S bid 88.15x12.09 ask 88.349x67.35 age 854ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 2388ms
+166B>209B>182S           USDC -> USDT0 -> XAUT0 -> USDC                max    -32.73 bps  t=   298.8s bottleneck~124.40 USDC
+      @166B bid 0.99946x258.81 ask 0.99947x219.6 age 4362ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 49886ms
+      @182S bid 4139.6x1.81 ask 4141.5x0.07 age 0ms
+107B>207S>209B>182S      USDC -> HYPE -> USDT0 -> XAUT0 -> USDC        max    -49.66 bps  t=   298.8s bottleneck~124.46 USDC
+      @107B bid 88.095x21.67 ask 88.096x56.76 age 345ms
+      @207S bid 88.104x3.69 ask 88.159x2.44 age 3523ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 49886ms
+      @182S bid 4139.6x1.81 ask 4141.5x0.07 age 0ms
+166S>182B>209S           USDC -> XAUT0 -> USDT0 -> USDC                max   -519.41 bps  t=   153.8s bottleneck~41.39 USDC
+      @182B bid 4136.7x1.81 ask 4138.8x0.01 age 0ms
+      @209S bid 3932x0.01 ask 4151x0.61 age 25908ms
+      @166S bid 0.99946x323.76 ask 0.99947x301.3 age 10034ms
+107S>182B>209S>207B      USDC -> XAUT0 -> USDT0 -> HYPE -> USDC        max   -529.78 bps  t=   231.9s bottleneck~41.39 USDC
+      @182B bid 4137.5x1.81 ask 4138.8x0.08 age 88ms
+      @209S bid 3932x0.01 ask 4.15E+3x0.5 age 10484ms
+      @207B bid 88.067x2.94 ask 88.121x2.18 age 0ms
+      @107S bid 88.088x794.52 ask 88.091x185.78 age 0ms
+
+## variant Af: routes observed 4, routes ever >0 bps: 0, >5bps: 0
+107S>166B>207B           USDC -> USDT0 -> HYPE -> USDC                 max    -14.63 bps  t=   290.9s bottleneck~49.34 USDC
+      @166B bid 0.99946x237.66 ask 0.99947x241.17 age 753ms
+      @207B bid 88.099x3.74 ask 88.159x2.44 age 0ms
+      @107S bid 88.119x0.56 ask 88.122x206.01 age 242ms
+107B>207S>166S           USDC -> HYPE -> USDT0 -> USDC                 max    -15.01 bps  t=   217.1s bottleneck~236.91 USDC
+      @107B bid 88.094x14.26 ask 88.099x56.75 age 0ms
+      @207S bid 88.15x12.09 ask 88.163x2.76 age 855ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 210ms
+107B>207S>209B>182S      USDC -> HYPE -> USDT0 -> XAUT0 -> USDC        max    -53.94 bps  t=   518.2s bottleneck~292.26 USDC
+      @107B bid 88.029x13 ask 88.03x25.65 age 0ms
+      @207S bid 88.034x3.32 ask 88.101x1.97 age 558ms
+      @209B bid 3932x0.01 ask 4151x0.58 age 615ms
+      @182S bid 4.14E+3x1.81 ask 4141x0.01 age 0ms
+107S>182B>209S>207B      USDC -> XAUT0 -> USDT0 -> HYPE -> USDC        max   -535.76 bps  t=    68.3s bottleneck~41.39 USDC
+      @182B bid 4137.3x1.78 ask 4139.3x0.01 age 886ms
+      @209S bid 3932x0.01 ask 4.15E+3x0.5 age 259ms
+      @207B bid 88.114x2.02 ask 88.18x2.63 age 0ms
+      @107S bid 88.102x1.98 ask 88.117x22.69 age 0ms
+
+## variant B: routes observed 30, routes ever >0 bps: 0, >5bps: 0
+107S>150B>255B           USDC -> USDE -> HYPE -> USDC                  max    -12.03 bps  t=   448.5s bottleneck~14.96 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 3514ms
+      @255B bid 87.999x12.5 ask 88.012x0.17 age 3513ms
+      @107S bid 88.032x20.17 ask 88.045x29.35 age 0ms
+107B>255S>150S           USDC -> HYPE -> USDE -> USDC                  max    -13.41 bps  t=   160.7s bottleneck~1102.10 USDC
+      @107B bid 88.16x28.34 ask 88.168x15.46 age 0ms
+      @255S bid 88.212x12.5 ask 88.236x0.17 age 2520ms
+      @150S bid 0.9997x46367.17 ask 0.99989x999.92 age 4901ms
+107S>166B>207B           USDC -> USDT0 -> HYPE -> USDC                 max    -13.84 bps  t=   231.9s bottleneck~192.00 USDC
+      @166B bid 0.99946x237.05 ask 0.99947x258.48 age 585ms
+      @207B bid 88.067x2.94 ask 88.121x2.18 age 0ms
+      @107S bid 88.088x794.52 ask 88.091x185.78 age 0ms
+107B>207S>166S           USDC -> HYPE -> USDT0 -> USDC                 max    -14.78 bps  t=   219.3s bottleneck~236.91 USDC
+      @107B bid 88.096x0.56 ask 88.097x46.53 age 0ms
+      @207S bid 88.15x12.09 ask 88.349x67.35 age 854ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 2388ms
+150S>166B>207B>255S      USDC -> USDT0 -> HYPE -> USDE -> USDC         max    -15.85 bps  t=   160.5s bottleneck~252.19 USDC
+      @166B bid 0.99946x323.76 ask 0.99947x301.3 age 4742ms
+      @207B bid 88.175x2.27 ask 88.224x2.86 age 0ms
+      @255S bid 88.212x12.5 ask 88.236x0.17 age 2361ms
+      @150S bid 0.9997x46367.17 ask 0.99989x999.92 age 4742ms
+150B>255B>207S>166S      USDC -> USDE -> HYPE -> USDT0 -> USDC         max    -16.89 bps  t=   219.3s bottleneck~14.98 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 4117ms
+      @255B bid 88.078x0.17 ask 88.113x0.17 age 0ms
+      @207S bid 88.15x12.09 ask 88.152x3.16 age 0ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 2394ms
+166B>209B>182S           USDC -> USDT0 -> XAUT0 -> USDC                max    -32.45 bps  t=   517.2s bottleneck~21.54 USDC
+      @166B bid 0.99948x42.65 ask 0.99949x21.55 age 3457ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 3456ms
+      @182S bid 4139.8x1.81 ask 4141x0.01 age 0ms
+107B>207S>209B>182S      USDC -> HYPE -> USDT0 -> XAUT0 -> USDC        max    -48.42 bps  t=   329.4s bottleneck~124.42 USDC
+      @107B bid 88.035x1.53 ask 88.04x3.71 age 0ms
+      @207S bid 88.076x12.5 ask 88.104x3.39 age 2032ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 2317ms
+      @182S bid 4138.8x1.81 ask 4140.9x0.01 age 2339ms
+150B>255B>207S>209B>182S USDC -> USDE -> HYPE -> USDT0 -> XAUT0 -> USDC max    -49.71 bps  t=   319.3s bottleneck~14.97 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 2895ms
+      @255B bid 88.043x12.5 ask 88.053x0.17 age 0ms
+      @207S bid 88.076x12.5 ask 88.104x2.54 age 398ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 2848ms
+      @182S bid 4139x1.74 ask 4141.1x0.08 age 1170ms
+166S>182B>209S           USDC -> XAUT0 -> USDT0 -> USDC                max   -519.41 bps  t=   153.8s bottleneck~41.39 USDC
+      @182B bid 4136.7x1.81 ask 4138.8x0.01 age 0ms
+      @209S bid 3932x0.01 ask 4151x0.61 age 3440ms
+      @166S bid 0.99946x323.76 ask 0.99947x301.3 age 3440ms
+
+## variant Bf: routes observed 30, routes ever >0 bps: 0, >5bps: 0
+107B>255S>150S           USDC -> HYPE -> USDE -> USDC                  max    -13.52 bps  t=   161.1s bottleneck~1102.09 USDC
+      @107B bid 88.16x28.34 ask 88.167x22.68 age 0ms
+      @255S bid 88.21x12.5 ask 88.236x0.17 age 351ms
+      @150S bid 0.9997x46367.17 ask 0.99989x999.92 age 0ms
+107S>166B>207B           USDC -> USDT0 -> HYPE -> USDC                 max    -13.84 bps  t=   231.9s bottleneck~192.00 USDC
+      @166B bid 0.99946x237.05 ask 0.99947x258.48 age 585ms
+      @207B bid 88.067x2.94 ask 88.121x2.18 age 0ms
+      @107S bid 88.088x794.52 ask 88.091x185.78 age 0ms
+107S>150B>255B           USDC -> USDE -> HYPE -> USDC                  max    -13.84 bps  t=   594.4s bottleneck~14.94 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 45ms
+      @255B bid 87.88x12.5 ask 87.906x0.17 age 1ms
+      @107S bid 87.91x8.59 ask 87.911x190.6 age 45ms
+107B>207S>166S           USDC -> HYPE -> USDT0 -> USDC                 max    -14.78 bps  t=   220.6s bottleneck~236.91 USDC
+      @107B bid 88.096x0.56 ask 88.097x94.28 age 2ms
+      @207S bid 88.15x12.09 ask 88.152x3.16 age 0ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 0ms
+150S>166B>207B>255S      USDC -> USDT0 -> HYPE -> USDE -> USDC         max    -16.04 bps  t=   599.7s bottleneck~274.96 USDC
+      @166B bid 0.99949x65.42 ask 0.9995x774.22 age 137ms
+      @207B bid 87.823x2.23 ask 87.891x3.13 age 1ms
+      @255S bid 87.88x12.5 ask 87.906x0.17 age 136ms
+      @150S bid 0.9997x46367.17 ask 0.99989x999.92 age 137ms
+150B>255B>207S>166S      USDC -> USDE -> HYPE -> USDT0 -> USDC         max    -16.89 bps  t=   220.6s bottleneck~14.98 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 4ms
+      @255B bid 88.078x0.17 ask 88.113x0.17 age 0ms
+      @207S bid 88.15x12.09 ask 88.152x3.16 age 2ms
+      @166S bid 0.99946x237.05 ask 0.99947x258.48 age 2ms
+166B>209B>182S           USDC -> USDT0 -> XAUT0 -> USDC                max    -32.73 bps  t=   300.0s bottleneck~124.40 USDC
+      @166B bid 0.99946x258.81 ask 0.99947x219.6 age 0ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 0ms
+      @182S bid 4139.6x1.79 ask 4141.5x0.07 age 0ms
+107B>207S>209B>182S      USDC -> HYPE -> USDT0 -> XAUT0 -> USDC        max    -48.67 bps  t=   460.5s bottleneck~124.42 USDC
+      @107B bid 87.998x2.2 ask 87.999x13.35 age 1ms
+      @207S bid 88.037x12.5 ask 88.253x12.5 age 1ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 1ms
+      @182S bid 4138.6x1.81 ask 4140.2x0.01 age 1ms
+150B>255B>207S>209B>182S USDC -> USDE -> HYPE -> USDT0 -> XAUT0 -> USDC max    -50.19 bps  t=   321.6s bottleneck~14.97 USDC
+      @150B bid 0.9997x46367.17 ask 0.99989x999.92 age 22ms
+      @255B bid 88.043x12.5 ask 88.053x0.17 age 4ms
+      @207S bid 88.076x12.5 ask 88.114x2.6 age 4ms
+      @209B bid 3932x0.01 ask 4149x0.03 age 4ms
+      @182S bid 4138.8x1.81 ask 4140.9x0.01 age 4ms
+166S>182B>209S           USDC -> XAUT0 -> USDT0 -> USDC                max   -519.41 bps  t=   155.8s bottleneck~41.39 USDC
+      @182B bid 4136.7x1.81 ask 4138.8x0.01 age 2ms
+      @209S bid 3932x0.01 ask 4151x0.61 age 1ms
+      @166S bid 0.99946x323.76 ask 0.99947x301.3 age 2ms

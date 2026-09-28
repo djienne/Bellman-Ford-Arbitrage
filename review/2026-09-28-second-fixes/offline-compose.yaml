@@ -1,0 +1,4 @@
+# Test only: combine with the project compose.yaml; never use for collection.
+services:
+  screener:
+    network_mode: none

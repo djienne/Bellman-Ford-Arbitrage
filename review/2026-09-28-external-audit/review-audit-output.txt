@@ -1,0 +1,21 @@
+ Container bellman-hyperliquid-check-run-f063f66d149b Creating 
+ Container bellman-hyperliquid-check-run-f063f66d149b Created 
+   Compiling bellman-arb v0.2.0 (/tmp/review-audit)
+    Finished `release` profile [optimized] target(s) in 28.49s
+     Running tests/review_audit.rs (/build/release/deps/review_audit-031ef52e42a96e19)
+
+running 4 tests
+AUDIT_RESIDUAL {"cash_bps":"-310.1371680000","cash_plus_mark_bps":"22.9082600000","cash_profit":"-0.77534292","indicative_bid_value":"0.83261357","note":"Synthetic gross-positive case; marks ignore minimum notional and are not spendable cash","residual":{"1":"0.00000979","2":"0.00047336"},"start":25}
+AUDIT_RESIDUAL {"cash_bps":"-53.8849500000","cash_plus_mark_bps":"24.1545240000","cash_profit":"-0.53884950","indicative_bid_value":"0.78039474","note":"Synthetic gross-positive case; marks ignore minimum notional and are not spendable cash","residual":{"1":"0.00000918","2":"0.00010392"},"start":100}
+AUDIT_RESIDUAL {"cash_bps":"-2.55927760000","cash_plus_mark_bps":"24.44311120000","cash_profit":"-0.06398194","indicative_bid_value":"0.67505972","note":"Synthetic gross-positive case; marks ignore minimum notional and are not spendable cash","residual":{"1":"0.00000794","2":"0.00016766"},"start":250}
+AUDIT_RESIDUAL {"cash_bps":"23.02713980000","cash_plus_mark_bps":"24.52390720000","cash_profit":"2.30271398","indicative_bid_value":"0.14967674","note":"Synthetic gross-positive case; marks ignore minimum notional and are not spendable cash","residual":{"1":"0.00000176","2":"0.00007850"},"start":1000}
+AUDIT_DUST {"balances":{"0":"9999.94604798","1":"0.0006"},"cash_change":"-0.05395202","fee_bps":"7","freshness_ms":1000,"paused":"unwound","slippage_bps":"2"}
+test audit_cash_return_and_residual_value_are_distinct ... ok
+test audit_real_fee_unwind_dust_pauses_account ... ok
+AUDIT_TIMING {"arrival_lateness_ns":49999997,"confirmation_deadline_ns":500000003,"later_book_would_change_fill":true,"next_submission_ns":550000000}
+test audit_timer_dispatch_lag_and_confirmation_lookahead ... ok
+AUDIT_FEES {"by_length":[{"legs":3,"max_fee_drag_bps":15.393140686000839,"min_fee_drag_bps":15.393140686000839,"routes":28},{"legs":4,"max_fee_drag_bps":27.970613717600568,"min_fee_drag_bps":16.790985646305543,"routes":90},{"legs":5,"max_fee_drag_bps":29.366697831680888,"min_fee_drag_bps":29.36669783167978,"routes":44},{"legs":6,"max_fee_drag_bps":41.92656856399801,"min_fee_drag_bps":41.92656856399801,"routes":48}],"minimum_fee_drag_bps":15.393140686000839}
+test audit_all_routes_fee_floor ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.01s
+

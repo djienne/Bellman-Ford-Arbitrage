@@ -1,0 +1,11 @@
+{
+  "previous_run": "run-1790631216054513033",
+  "current_run": "run-1790631982022891512",
+  "all_account_fields_preserved": true,
+  "checkpoint_version": 3,
+  "changed_source_files_since_smoke": [
+    "src/main.rs",
+    "src/paper.rs"
+  ],
+  "note": "Final changes are legacy-unobservable pause migration and transient metadata startup retry; feed/detector/fill code unchanged."
+}

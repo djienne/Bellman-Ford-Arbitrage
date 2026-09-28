@@ -1,0 +1,7 @@
+Public metadata unavailable; retry in 1s: error sending request for url (https://api.hyperliquid.xyz/info)
+Public metadata unavailable; retry in 2s: error sending request for url (https://api.hyperliquid.xyz/info)
+Public metadata unavailable; retry in 4s: error sending request for url (https://api.hyperliquid.xyz/info)
+Public metadata unavailable; retry in 8s: error sending request for url (https://api.hyperliquid.xyz/info)
+Public metadata unavailable; retry in 16s: error sending request for url (https://api.hyperliquid.xyz/info)
+Public metadata unavailable; retry in 30s: error sending request for url (https://api.hyperliquid.xyz/info)
+running 0

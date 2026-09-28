@@ -1,0 +1,66 @@
+{
+  "run": "run-1790631216054513033",
+  "duration_s": 600.001415494,
+  "connections": 2,
+  "frames": 38592,
+  "books": 38443,
+  "malformed": 0,
+  "cycles_evaluated": 1258134,
+  "positive_episodes": 0,
+  "model": 3,
+  "cpu_quota": "100000 100000\n",
+  "exact_replay": true,
+  "receipt_to_decision": {
+    "max_ns": 3745466,
+    "mean_ns": 601856,
+    "p50_us": 550,
+    "p95_us": 1219,
+    "p99_us": 1560,
+    "percentile_resolution_us": 1,
+    "samples": 38592
+  },
+  "receipt_to_hot": {
+    "max_ns": 1406385,
+    "mean_ns": 175225,
+    "p50_us": 155,
+    "p95_us": 350,
+    "p99_us": 511,
+    "percentile_resolution_us": 1,
+    "samples": 38443
+  },
+  "queue_age": {
+    "max_ns": 3730883,
+    "mean_ns": 570275,
+    "p50_us": 526,
+    "p95_us": 1197,
+    "p99_us": 1532,
+    "percentile_resolution_us": 1,
+    "samples": 38592
+  },
+  "processing": {
+    "max_ns": 1305557,
+    "mean_ns": 31581,
+    "p50_us": 23,
+    "p95_us": 94,
+    "p99_us": 152,
+    "percentile_resolution_us": 1,
+    "samples": 38592
+  },
+  "live_order_deadline_samples": 0,
+  "structural_routes": 210,
+  "routes_ever_priced": 30,
+  "fresh_price_route_time_pct": 14.069392726760258,
+  "executable_depth_route_time_pct": 10.056666231605957,
+  "depth_coverage_within_ever_priced_routes_pct": 70.3966636212417,
+  "recording_bytes": 29043877,
+  "projected_gib_day": 3.8950782467417477,
+  "remaining_cap_days": 12.746641547706426,
+  "account_balances_preserved": true,
+  "cpu_usage_samples": [
+    "0.93%",
+    "1.16%",
+    "1.14%",
+    "1.20%",
+    "0.72%"
+  ]
+}

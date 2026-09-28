@@ -1,0 +1,89 @@
+Review: Bellman-Ford arbitrage prototype
+
+Verdict: you're right that it's bad, but not The core math is correct, and every profitit reports is recomputed from current quotes, so it never reports a fake profit. What's broken is everything around
+that: with the shipped config it can't find t after running for a while, and everyduration it logs is wrong. Its incremental Bellman-Ford also breaks the textbook algorithm's rules in four places, and it solves a speed problem that doesn't exist.
+
+How I checked it (no project code was changed):
+- Existing checks: the 4 tests in review/check.rs all fail against the real source.
+- Synthetic market: I replayed the exact mairket with injected mispricings. Ground truthwas every 3- and 4-leg cycle, priced directly from raw bid/ask. 200k updates, 3 random seeds.
+- Speed: I timed a from-scratch search on the real code at several graph sizes.
+
+It can't produce its intended result
+
+1. The shipped config.toml makes arbitrage iDT" switches discovery to legacy mode(binance.rs:218). Every coin is then paired only with USDT, and that graph contains no 3-leg cycle at all. The detector can't find anything; you only get triangles by deleting that line.
+2. It stops recording new opportunities. Once an opportunity ends, its slot in the tracker is never freed (opportunity_store.rs:146-169). After about 128 different cycles, new ones are dropped with no error. In the simulation, 30% of real detections were already lost this way. A 24-hour run will go silent.
+3. Every duration is inflated by the 1 s grars:237). The code computes now - start, where now is already past last_seen + grace. A 3 ms opportunity is logged as about 1000 ms, which ruins the timing numbers the PRD asks for. It should be last_seen - start.
+4. The log output can't be read. It prints o no currency names, legs, prices or sizes.The "cycles/s" figure also counts false alarms.
+
+Hot-path Bellman-Ford vs Sedgewick's version
+s      │          What it costs          │
+├───────────────────────────────────────────────┼──────────────────────────────┼─────────────────────────────────┤
+│ The "relaxed more than N times" counter is    │ Looks for an actual cycle in │ About 45% of raw detections are │
+│ never reset (hot.rs:168), so after ordinary   │  the predecessor links every │  false alarms; one BTC/USDT     │
+│ price moves every node looks like it's in a   │  V relaxations (p. 673/677)  │ market alone "has a cycle" by   │
+│ cycle                                         │                              │ update 2                        │
+├─────────────────────────────────────────────────┼─────────────────────────────────┤
+│                                               │ Runs from scratch on fixed   │ Median 3–4 update delay; about  │
+│ Distances are never reset, even though prices │ weights; the correctness     │ 19% of profitable ticks go      │
+│  keep changing                             on   │ unreported                      │
+│                                               │ that                         │                                 │
+├───────────────────────────────────────────────┼──────────────────────────────┼─────────────────────────────────┤
+│ Stops partway through a node's edges when the │ Always relaxes every         │ Whether a cycle is found        │
+│  budget runs out, and returns early           │ outgoing edge of a vertex    │ depends on the budget (check    │
+│ (hot.rs:172,179)                              │                              │ fails at budget = 1)            │
+├─────────────────────────────────────────────────┼─────────────────────────────────┤
+│ The extracted route is in reverse order       │ Returns the cycle in the     │ Harmless for the profit sum,    │
+│ (cycle.rs:63-86)                              │ right direction              │ but an executor would trade the │
+│                                                 │  losing direction               │
+└───────────────────────────────────────────────┴──────────────────────────────┴─────────────────────────────────┘
+
+Measured result: the shipped loop catches 96s, with a 3–4 update delay and 81% recall per tick. A fresh Bellman-Ford run after every update catches 100% with no delay. The bugs cost you missed opportunities and noise; the profit recheck stops them from producing fake profits.
+
+Complexity that buys nothing
+
+- The cold-path Bellman-Ford never reaches tndidates every 10 s and main.rs:113 neverreads them. That thread, CandidateSet (which uses the RwLock the PRD forbids), the unused simd-json dependency, and the never-called reset_relax_counts/decay_distances are all dead code.
+- The per-tick budget and incremental designt isn't under pressure. Measured on the realcode:
+
+┌────────────┬───────────────────────────────┬───────────────────────────────────────────────────┐
+│ Currencies │ Fresh Bellman-Ford per update │ Scan every ≤4-leg cycle touching the updated pair │
+├────────────┼───────────────────────────────┼───────────────────────────────────────────────────┤
+│ 12         │ 0.4 µs                        │ 0.5 µs                                            │
+├────────────┼───────────────────────────────┼───────────────────────────────────────────────────┤
+│ 54         │ 1.8 µs                                               │
+├────────────┼───────────────────────────────┼───────────────────────────────────────────────────┤
+│ 104        │ 3.6 µs                        │ 15 µs                                             │
+└────────────┴──────────────────────────────────────────────────────┘
+
+- The exhaustive scan is exact and returns every profitable cycle. Bellman-Ford returns one arbitrary cycle; Sedgewick
+  himself says (p. 681) that no efficient alhe PRD bans enumeration, which rules out the exact method even though it is well inside the latency budget.
+
+Market model
+- Staleness is modelled wrong. Binance only sends a bookTicker when the quote changes, so a quiet pair can be current after 5 s while a busy pair's 5 s-old quote is badly out of date. What actually matters, whether all legs were quoted at the same moment, isn't measured.
+- The 150 µs latency target is irrelevant. Network delay to Binance is milliseconds to hundreds of milliseconds per leg, so co-located traders take these first. The loop also busy-spins a full core; under the fleet's 0.1 CPU limit
+  it would stall about 90 ms of every 100 ms
+
+What's correct
+
+- The edge weights -(ln bid + ln(1-f)) and ln ask - ln(1-f) are right: sell at the bid, buy at the ask, fee on every leg.
+- Starting every distance at 0 acts as a virtual source reaching every node (Sedgewick Ex. 4.4.43).
+- It stores the predecessor edge, not just the node.
+- The numerical tolerance is kept separate from the minimum-profit threshold.
+
+The two docs
+
+- Algorithms.pdf is Sedgewick & Wayne, 4th e(book pp. 668–681). The table above is thecomparison.
+- infos_astra_6.txt is sound. I checked its worked example: 1.0062 gross, 1.003184 at 10 bps per leg, 0.99717 at 30
+  bps. Its :chatgpt-content-reference citatiThe points it stresses (trade size, "onecycle is not the best cycle", exchange vs. receive timestamps, being stuck after a leg fills, rounding) are exactly what this prototype is missing. Its advice to compare Bellman-Ford against bounded enumeration is what my simulation did.
+
+Recommendation
+
+Before fixing any code, find out whether net-of-fee opportunities with real size exist at all. The live recording measures that. If they essentially never do, no fix will help. If they do, the simpler design is:
+- replace the hot/cold Bellman-Ford with the
+- delete the cold thread and the per-tick budget;
+- fix slot reuse and the duration bug;
+- log the route, leg prices, quote ages and sizes;
+- remove quote_filter from config.toml.
+
+I didn't run cargo test or the benchmarks, because building the full crate needs network access for its dependencies.
+
+The experiment scripts are in the scratchpad, sim\sim.rs and sim\cost.rs.

@@ -1,0 +1,223 @@
+**My first book recommendation is _Algorithms, 4th Edition_ by Robert Sedgewick and Kevin Wayne.** Its section on shortest paths, together with the companion `Arbitrage.java` example, directly explains currency arbitrage using Bellman–Ford. Pair it with **_Trading and Exchanges_ by Larry Harris** for the market mechanics that determine whether a detected opportunity is actually tradable. :chatgpt-content-reference{index="0"}
+
+I’ll interpret “multi-arbitrage” as **multi-currency or multi-asset conversion cycles**, including routes with more than three trades. Executing several arbitrage cycles simultaneously is a related—but separate—optimization problem.
+
+## 1. The central principle: turn arbitrage into negative-cycle detection
+
+Represent the market as a **directed graph**. Each asset is a vertex, and each available conversion is an edge. For an edge \(i\rightarrow j\), let \(r_{ij}\) be the number of units of asset \(j\) received for one unit of asset \(i\).
+
+For a cycle such as
+
+\[
+\text{USD}\rightarrow\text{EUR}\rightarrow\text{GBP}\rightarrow\text{USD},
+\]
+
+the conversion multiplier is
+
+\[
+G=r_{\text{USD,EUR}}\,r_{\text{EUR,GBP}}\,r_{\text{GBP,USD}}.
+\]
+
+Under a fixed-rate model, the cycle is profitable when \(G>1\). Bellman–Ford operates on **sums**, not products, so transform each edge:
+
+\[
+\boxed{w_{ij}=-\ln(r_{ij})}.
+\]
+
+Then
+
+\[
+\sum_{(i,j)\in C}w_{ij}
+=-\ln\!\left(\prod_{(i,j)\in C}r_{ij}\right).
+\]
+
+Therefore, **a profitable conversion cycle corresponds to a negative-weight cycle**. This is the construction used in Princeton’s arbitrage example. :chatgpt-content-reference{index="1"}
+
+The modeled return of a cycle is consequently
+
+\[
+\boxed{R_C=\exp\!\left(-\sum_{(i,j)\in C}w_{ij}\right)-1}.
+\]
+
+An individual negative edge does **not** establish arbitrage: exchange-rate magnitudes depend on the units used. What matters is completing a cycle and ending with more of the **same starting asset**.
+
+## 2. Build the graph from executable prices—not headline prices
+
+This is where a useful trading model begins to differ from a textbook demonstration.
+
+For a market quoted as **BASE/QUOTE**, with prices measured in quote currency per unit of base currency:
+
+\[
+r_{\text{BASE}\rightarrow\text{QUOTE}}
+=\text{bid},
+\qquad
+r_{\text{QUOTE}\rightarrow\text{BASE}}
+=\frac{1}{\text{ask}}.
+\]
+
+You sell the base asset into available bids and buy it from available asks. A last-traded price or midpoint is not a substitute for those executable orders. Exchange matching rules and available resting orders determine the actual execution price. :chatgpt-content-reference{index="2"}
+
+### Include fees before searching
+
+Under a simplified convention where a proportional fee \(f_{ij}\) is deducted from the asset received,
+
+\[
+r_{ij}^{\text{net}}=r_{ij}(1-f_{ij}),
+\]
+
+so the weight becomes
+
+\[
+w_{ij}=-\ln\!\left(r_{ij}^{\text{net}}\right).
+\]
+
+Use the venue’s actual fee convention in implementation. Fees charged in the input asset, fees paid in another token, and fixed costs require different accounting.
+
+### A hypothetical example
+
+Assume these conversion rates are executable for the full trade size:
+
+| Conversion | Rate before explicit fees |
+|---|---:|
+| USD → EUR | 0.90 EUR per USD |
+| EUR → GBP | 0.86 GBP per EUR |
+| GBP → USD | 1.30 USD per GBP |
+
+Starting with USD 1,000:
+
+\[
+1000\rightarrow900\rightarrow774\rightarrow1006.20.
+\]
+
+The gross modeled return is **0.62%**.
+
+With a hypothetical fee of **0.10% on each leg**:
+
+\[
+G_{\text{net}}
+=0.90\times0.86\times1.30\times0.999^3
+=1.0031844176.
+\]
+
+The final amount is approximately **USD 1,003.18**, a **0.3184%** return before any additional execution costs.
+
+At **0.30% per leg**, the same route returns approximately **USD 997.17**—a loss.
+
+These are illustrative calculations, not current market quotes. They show why searching gross rates first and considering costs afterward can produce misleading signals.
+
+## 3. What Bellman–Ford actually does
+
+Bellman–Ford repeatedly attempts to improve distance estimates using the relaxation rule
+
+\[
+d[v]\leftarrow\min\bigl(d[v],d[u]+w(u,v)\bigr).
+\]
+
+In the standard full-pass version, shortest paths need at most \(V-1\) edges when there is no relevant negative cycle. An improvement on the \(V\)-th pass indicates a negative cycle reachable from the source. Predecessor information is then used to recover the cycle. The worst-case running time is **\(O(VE)\)**, with **\(O(V)\)** additional working memory beyond the graph. :chatgpt-content-reference{index="3"}
+
+Here, \(V\) is the number of vertices and \(E\) the number of directed conversion edges.
+
+**Searching the entire market graph.** A single-source search can miss cycles in disconnected components. To search everywhere, add an artificial source with zero-weight edges to every vertex. Initializing every distance to zero gives the same starting effect for the full-pass detector. NetworkX’s `negative_edge_cycle` uses the added-source approach. :chatgpt-content-reference{index="4"}
+
+**Recovering an actionable route.** Store the predecessor **edge**, not merely the predecessor asset, when multiple venues or markets can connect the same assets. The route must identify which actual conversion to execute.
+
+### Important limitations
+
+**Finding one cycle is not finding the best cycle.** Standard negative-cycle detection returns a qualifying cycle, not necessarily the cycle with the greatest percentage return, largest executable profit, or lowest execution risk. NetworkX’s `find_negative_cycle`, for example, returns one found negative cycle. :chatgpt-content-reference{index="5"}
+
+**Multi-leg is not the same as multi-opportunity allocation.** Bellman–Ford can detect a cycle longer than three edges, but it does not allocate capital among several overlapping cycles. Two attractive routes may compete for the same balance or the same resting liquidity.
+
+**Numerical negativity is not sufficient evidence to trade.** Floating-point rounding can matter around zero; Princeton explicitly flags this issue in its implementation. Recalculate the recovered route using actual quantities, fee rules, and exchange rounding. Keep numerical tolerances separate from your minimum economic-profit requirement. :chatgpt-content-reference{index="6"}
+
+## 4. Turning the detector into a trading strategy
+
+I would separate the system into three components:
+
+\[
+\boxed{\text{Detect candidates}
+\;\rightarrow\;
+\text{Simulate quantities}
+\;\rightarrow\;
+\text{Control execution}}
+\]
+
+### A. Maintain trustworthy market data
+
+Use an order-book feed with price **and size**, rather than relying only on recent trades. Track update timing and handle reconnects or missing messages according to the feed’s specification.
+
+For a concrete reference, Coinbase Exchange documents snapshot-plus-update order-book maintenance. Its Level 2 updates contain price-level sizes, and those sizes replace the previous values rather than representing increments. Misinterpreting that detail would corrupt a liquidity model. :chatgpt-content-reference{index="7"}
+
+My recommendation is to retain both exchange-event timestamps and local receipt timestamps, then test whether a candidate depends on quotes that could not realistically have been acted on together.
+
+### B. Evaluate the route at a specific size
+
+A top-of-book rate does not tell you how much you can trade at that rate. Once the available quantity is exhausted, a larger order needs different prices or remains partly unfilled; the exchange’s order lifecycle explicitly distinguishes filled and unfilled portions. :chatgpt-content-reference{index="8"}
+
+For a starting quantity \(q\), model each conversion as a function:
+
+\[
+q_{i+1}=F_i(q_i),
+\]
+
+where \(F_i\) accounts for book depth, fees and quantity rounding.
+
+The route’s profit is then
+
+\[
+\boxed{\Pi_C(q)=q_{\text{final}}(q)-q-c_{\text{other}}(q)},
+\]
+
+with all terms expressed in the starting asset.
+
+This creates a second optimization problem: **which route and trade size produce the best feasible profit?**
+
+For example, a hypothetical 0.5% return available on only USD 100 produces USD 0.50, whereas 0.1% available on USD 10,000 produces USD 10. Percentage return alone is not the correct ranking.
+
+### C. Model failed and partial execution
+
+Separate orders should not be treated as one all-or-nothing transaction. Coinbase’s order documentation, for example, provides immediate-or-cancel and fill-or-kill instructions for individual orders; those instructions do not, by themselves, coordinate a multi-market cycle. :chatgpt-content-reference{index="9"}
+
+Your execution design needs an explicit answer to: **What happens when the first trade fills but the next one does not?**
+
+I would require an inventory limit, a maximum quote age, a maximum acceptable loss for closing an incomplete route, and a stop condition for feed or order-state uncertainty. These are proposed engineering controls, not guarantees of profitability.
+
+### D. Keep venues distinct
+
+For cross-exchange arbitrage, model vertices as
+
+\[
+(\text{asset},\text{venue}),
+\]
+
+rather than simply “BTC” or “USD.”
+
+That design prevents the model from silently treating a balance on one exchange as immediately available on another. Include funding, transfers and rebalancing as explicit constraints. For example, Coinbase requires sufficient available funds and places funds on hold when orders are submitted. :chatgpt-content-reference{index="10"}
+
+### E. Handle several cycles without double-counting
+
+When evaluating multiple routes, reserve the balances and liquidity consumed by each proposed execution. Summing the standalone profits of overlapping cycles can overstate the feasible total.
+
+For an initial prototype, I would restrict the search to short cycles and compare the results with Bellman–Ford. NetworkX provides bounded-length enumeration through `simple_cycles(..., length_bound=...)`; this enumerates candidates but does not itself determine profitability. :chatgpt-content-reference{index="11"}
+
+## 5. Recommended books
+
+| Book | Why I recommend it for this project |
+|---|---|
+| **_Algorithms, 4th Edition_ — Robert Sedgewick and Kevin Wayne** | **Best first choice for the detector.** Study §4.4, shortest paths, negative cycles and the companion currency-arbitrage implementation. The authors provide explanations, exercises and Java code. :chatgpt-content-reference{index="12"} |
+| **_Trading and Exchanges: Market Microstructure for Practitioners_ — Larry Harris** | **Best complement for trading mechanics.** Focus on chapters 4, 6, 14, 17 and 21: orders, order-driven markets, bid/ask spreads, arbitrageurs and transaction-cost measurement. :chatgpt-content-reference{index="13"} |
+| **_Algorithmic and High-Frequency Trading_ — Álvaro Cartea, Sebastian Jaimungal and José Penalva** | **Best advanced follow-up for mathematical execution models.** Covers execution, market making, adverse selection and related trading problems. It is a graduate-level treatment, not a turnkey Bellman–Ford strategy manual. :chatgpt-content-reference{index="14"} |
+| **_Introduction to Algorithms, 4th Edition_ — Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest and Clifford Stein** | **An alternative algorithms foundation.** Choose this for a comprehensive, rigorous treatment with pseudocode. There is no need to buy both this and Sedgewick initially. :chatgpt-content-reference{index="15"} |
+
+**My suggested order:** Sedgewick’s relevant section → a small detector and quantity simulator → Harris → Cartea/Jaimungal/Penalva.
+
+## 6. Useful online resources
+
+**Princeton’s _Algorithms_ companion site.** Start with **“4.4 Shortest Paths”** and **`Arbitrage.java`**. This is the most directly relevant free explanation and reference implementation for your question. Treat its exchange-rate example as an algorithm demonstration, not a live trading system. :chatgpt-content-reference{index="16"}
+
+**NetworkX documentation.** For a Python prototype, study `negative_edge_cycle` to test for a negative cycle anywhere in the graph, and `find_negative_cycle` to retrieve one from a source. These are useful reference implementations against which to test your own detector. :chatgpt-content-reference{index="17"}
+
+**Official exchange documentation.** Read the documentation for your intended venue’s market-data feed, order matching, order types and funding constraints. Coinbase Exchange’s Level 2 and order documentation are concrete examples of the implementation details your model must reproduce—not a recommendation to use that particular venue. :chatgpt-content-reference{index="18"}
+
+**Cartea/Jaimungal/Penalva’s companion notebooks.** The authors provide Python Jupyter notebooks covering data exploration and several optimal-execution models. They are useful after the graph detector works and you begin studying execution more seriously. :chatgpt-content-reference{index="19"}
+
+**The key takeaway:** use Bellman–Ford to answer **“Does this modeled conversion network contain a profitable cycle?”** Then use a separate quantity-and-execution model to answer **“Can I complete that cycle, at this size, with an acceptable outcome when execution goes wrong?”**

@@ -1,0 +1,9 @@
+ Container bellman-hyperliquid-screener-run-176024dd0777 Creating 
+ Container bellman-hyperliquid-screener-run-176024dd0777 Created 
+
+running 1 test
+test all_affected_cycles_without_hot_allocations ... {"cpu_quota":"100000 100000\n","hot_allocations":0,"iterations":200000,"markets":29,"max_ns":72776,"p50_ns":401,"p95_ns":962,"p99_ns":1123,"routes":210}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
