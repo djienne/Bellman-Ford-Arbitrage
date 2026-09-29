@@ -4,7 +4,7 @@ This is an **arbitrage opportunity screener and paper trader** for Hyperliquid s
 
 **Paper only.** There are no order endpoints, no signing code, no keys and no real accounts. The point is to measure *whether, how often and for how long* such opportunities exist and survive latency, not to trade them.
 
-> **Status (28 Sep 2026, [`DOCS/VALIDATION.md`](DOCS/VALIDATION.md)):** engineering checks and smoke runs pass, but **no positive fee-net cycle has been observed yet**. Quiet observations do not prove that rare opportunities never occur, and public-feed paper results say nothing about live fill profitability.
+> **Status (30 Sep 2026 local time):** format 4 is running in independent epoch `bbo-ioc-v4-2026-09-30` with three unpaused 10,000-USDC accounts. The old paused accounts remain preserved. The first model-3 coverage review found 1,275 positive fee-net episodes, three entry-eligibility episodes and five attempts, with no completed full cycles. The format-4 ten-minute smoke and historical replays passed. See [current validation](DOCS/VALIDATION.md#execution-observability-format-4-and-independent-epoch) and [observation review](DOCS/OBSERVATION_REVIEW.md). Counterfactual results are separate from observed paper outcomes; live fill profitability remains unverified.
 
 ## How it works
 
@@ -56,6 +56,8 @@ docker compose run --rm screener run --runs runs/smoke --duration 600 --reconnec
 # Replay a recording (replace run-... with a directory in runs/)
 docker compose run --rm screener replay runs/run-... --verify
 docker compose run --rm screener replay runs/run-... --latency-ms 100,250,500 --quote-age-ms 500 --depth-age-ms 500
+# Counterfactual comparison on fresh accounts; cannot be combined with --verify
+docker compose run --rm screener replay runs/run-... --execution-model 4
 ```
 
 `--verify` re-checks every recorded engine event under the original assumptions. Other replay options run on fresh, independent accounts and never modify the evidence.
@@ -89,7 +91,7 @@ Decimal quantities and bps are strings. Set `l2_fast = false` for the slower twe
 ## Paper-trading model
 
 - **Order flow.** Each order fixes quantity and limit at submission and fills against the levels available at arrival, after the assumed outbound delay. Only confirmed net proceeds fund the next leg. A triangle needs at least 1.5 s of assumed network delay plus real processing delay. One timer per earliest deadline drives execution; observations processed after a deadline cannot improve that fill.
-- **Books.** Actual bids/asks and all received levels. BBO and L2 have separate clocks; a fresh BBO does not refresh depth, and depth counts only if its top agrees with the BBO. Empty sides, stale data, crosses and disconnects invalidate routes. A fresh explicit empty side is a known zero fill; missing data at arrival makes the attempt **unobservable** and excludes it from performance claims.
+- **Books.** Actual bids/asks and all received levels, with separate BBO/L2 clocks. A fresh traded-side quote outside the fixed IOC limit supports a zero fill. Fresh BBO can support an entire order at the best price; otherwise execution requires coherent traded-side L2. Changed BBO prices/quantities are never stitched into old deeper levels. Unknown deeper remainders are **unobservable**, while a partial fill is observable when the fixed limit excludes all unseen worse prices. Opposite-side updates alone do not invalidate an order. A fresh BBO does not refresh L2; stale data, crosses and disconnects invalidate evidence.
 - **Fees.** Fractional per market: 7 bps base spot taker, with the documented 80% reduction for quote-token pairs inferred from token identities. Unverified account, staking and referral discounts are unapplied. `discover` shows each rate's provenance. The fee is charged on the received token, rounded up. Lot size, price precision and the 10-quote-token minimum notional apply to every leg.
 - **Shadow liquidity.** Each latency scenario keeps its own finite depth shared across routes. Fills consume it; an identical snapshot does not refill it, and levels beyond a truncated snapshot cannot manufacture replenishment. It persists across restarts. The scenarios are alternatives: **never sum their profit**.
 - **Failures and unwinds.** A partial or rejected leg abandons the route and unwinds through the completed legs under the same latency rules. Confirmed, untradeable dust worth at most the dust budget (fresh direct-USDC bid marks) does not block new entries; anything larger stays blocked. An unobservable fill keeps its reservation and pending order rather than returning hypothetical cash, and no failed attempt resets to starting funds.
@@ -105,13 +107,14 @@ Each `runs/run-...` directory contains:
 - `status.json`: minute summary, rankings, accounts, inventory marks, and separate structural / dormant / fresh-price / executable-depth coverage.
 - `final.json`: shutdown result. A clean run needs `recording_complete = true` and a checkpoint matching the durable terminal record; the file's existence alone proves nothing.
 
-New recordings use manifest **format 3**. Formats 1 and 2 still verify with their original behavior.
+New recordings use manifest **format 4**, including source clocks and `bbo:top`, `bbo:zero` or full-L2 execution evidence. Formats 1–3 still verify with their original behavior. Full-L2 coverage excludes BBO-only quantity; successful size estimates identify their execution sources. `--execution-model 3|4` uses fresh comparison accounts and labels the result counterfactual.
 
 **Reading the numbers.** `realized_usdc` is the confirmed USDC cash change of observable attempts. Residual inventory is valued at separate indicative marks; pending reservations and unresolved exposure are not profit. Episodes end on an observed failure and are censored by missing data, with no grace period inflating durations. Exchange timestamps keep millisecond resolution; receipt clocks are stored in nanoseconds, which is storage resolution, **not** nanosecond accuracy. Replay follows recorded order and processing times, never exchange-time order.
 
 ## Operations
 
-- **Recovery** follows the durable `runs/current.json` pointer. A validated format-3 terminal checkpoint restores all accounts; unclean or legacy segments use verified prefix replay. Remapping uses token and market identities and keeps reservations, pending orders, dust and shadow depletion. Metadata and fees refresh on restart and start a new segment.
+- **Recovery** follows the durable `runs/current.json` pointer. A validated format-3/4 terminal checkpoint restores all accounts; unclean or legacy segments use verified prefix replay. Remapping uses token and market identities and keeps reservations, pending orders, dust and shadow depletion. Metadata and fees refresh on restart and start a new segment.
+- **Independent paper epochs.** After a clean shutdown, `run --new-paper-epoch ID` explicitly starts separate 10,000-USDC accounts and shadow ledgers. The manifest and terminal checkpoint identify the epoch and predecessor run; old accounts and unresolved exposure remain in their original evidence. Reusing the current ID restores balances without adding funds; older IDs are rejected. Ordinary restarts continue the current epoch. Never pool account outcomes across epochs or latency scenarios.
 - **Blocked state.** At the recording cap, `runs/RECORDING_LIMIT_REACHED` blocks startup before discovery. Persistent recording or recovery errors leave the service waiting for an operator, with the reason in the logs and `runs/blocked.json`. Fix the cause and restart explicitly; nothing is deleted, reset or restart-looped. Bounded runs exit non-zero instead.
 - **Transient outages** (connection failures, timeouts, 5xx, rate limiting) on the metadata fetch retry with capped backoff, including when Docker starts before networking. Malformed metadata is a blocking error.
 - **Dust recheck.** Stop the service, then run `run --reconcile-dust 250` against the existing `runs/` (250 identifies the scenario). It waits up to 30 s for marks and journals its decision; it never edits balances or clears unresolved attempts.

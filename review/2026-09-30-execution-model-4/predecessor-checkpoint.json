@@ -1,0 +1,8 @@
+{
+  "predecessor_run": "run-1790631982022891512",
+  "terminal_sequence": 8277195,
+  "recording_complete": true,
+  "accounts_and_shadow_bound_to_terminal": true,
+  "balances_reservations_holdings_pending_fills_preserved": true,
+  "previous_ledger_model": 3
+}

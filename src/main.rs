@@ -64,6 +64,17 @@ async fn execute(args: &[String]) -> Result<()> {
             })
             .transpose()?;
         let verify = args.iter().any(|s| s == "--verify");
+        let execution_model = option(args, "--execution-model")
+            .map(|s| s.parse::<u32>())
+            .transpose()?;
+        anyhow::ensure!(
+            !args.iter().any(|a| a == "--execution-model") || execution_model.is_some(),
+            "execution model requires 3 or 4"
+        );
+        anyhow::ensure!(
+            !args.iter().any(|a| a == "--new-paper-epoch"),
+            "new epoch is run-only"
+        );
         anyhow::ensure!(
             !verify || lat.is_none(),
             "verification requires recorded latencies"
@@ -95,19 +106,25 @@ async fn execute(args: &[String]) -> Result<()> {
                     && option(args, "--force-after-ns").is_none()),
             "force options require a route"
         );
-        let alternative =
-            lat.is_some() || quote_age.is_some() || depth_age.is_some() || diagnostic.is_some();
-        let engine = journal::replay_options(
+        let alternative = lat.is_some()
+            || quote_age.is_some()
+            || depth_age.is_some()
+            || diagnostic.is_some()
+            || execution_model.is_some();
+        let engine = journal::replay_model(
             Path::new(dir),
             lat,
             verify,
             quote_age,
             depth_age,
             diagnostic,
+            execution_model,
         )?;
         let mut report = engine.report();
         if alternative {
             report["additional_timer_processing_assumption_ns"] = 0.into();
+            report["counterfactual"] = true.into();
+            report["execution_performance_included"] = false.into();
         }
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
@@ -121,6 +138,15 @@ async fn execute(args: &[String]) -> Result<()> {
         "forced entry is replay-only"
     );
     let root = PathBuf::from(option(args, "--runs").unwrap_or_else(|| "runs".into()));
+    let new_epoch = option(args, "--new-paper-epoch");
+    anyhow::ensure!(
+        !args.iter().any(|a| a == "--new-paper-epoch") || new_epoch.is_some(),
+        "new epoch requires an ID"
+    );
+    anyhow::ensure!(
+        !args.iter().any(|a| a == "--execution-model") && (command == "run" || new_epoch.is_none()),
+        "execution model override is replay-only; new epoch is run-only"
+    );
     if command == "run" && root.join("RECORDING_LIMIT_REACHED").exists() {
         bail!("recording limit marker present; resolve storage explicitly");
     }
@@ -142,13 +168,21 @@ async fn execute(args: &[String]) -> Result<()> {
                 && cfg.dust_limit_usdc > rust_decimal::Decimal::ZERO),
         "reconciliation requires a configured scenario and enabled dust policy"
     );
-    let prior = if command == "run" {
+    let prior_dir = if command == "run" {
         journal::latest(&root)?
-            .map(|p| journal::recover(&p))
-            .transpose()?
     } else {
         None
     };
+    let prior = prior_dir
+        .as_ref()
+        .map(|p| journal::recover(p))
+        .transpose()?;
+    let (epoch, predecessor, fresh_epoch) =
+        journal::paper_epoch(&root, prior_dir.as_deref(), new_epoch.as_deref())?;
+    anyhow::ensure!(
+        !fresh_epoch || reconcile.is_none(),
+        "new epoch cannot reconcile a predecessor account"
+    );
     // A reboot may bring Docker up before DNS/networking. Transient public-API
     // failures retry; malformed metadata and recovery failures remain blocked.
     let mut discovery_backoff = 1;
@@ -186,7 +220,7 @@ async fn execute(args: &[String]) -> Result<()> {
         bail!("commands: discover, run, replay")
     }
     let mut accounts = None;
-    if let Some((old, mut saved)) = prior {
+    if let Some((old, mut saved)) = prior.filter(|_| !fresh_epoch) {
         for a in &mut saved {
             a.remap(&old, &u)?;
             a.interrupt("restart recording gap");
@@ -194,20 +228,25 @@ async fn execute(args: &[String]) -> Result<()> {
         accounts = Some(saved);
     }
     let created = hyperliquid::utc_ns();
+    let mut engine = Engine::new(cfg.clone(), u.clone(), accounts)?;
+    engine.model_version = 4;
+    engine.paper_epoch = epoch.clone();
+    engine.predecessor_run_id = predecessor.clone();
     let manifest = Manifest {
-        format: 3,
+        format: 4,
         run_id: format!("run-{created}"),
         created_utc_ns: created,
         config: cfg.clone(),
         universe: u.clone(),
-        initial_accounts: accounts.clone(),
+        initial_accounts: Some(engine.accounts.clone()),
+        paper_epoch: epoch,
+        predecessor_run_id: predecessor,
         source_version: std::fs::read_to_string("SOURCE_SHA256")
             .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into()),
         cpu_quota: std::fs::read_to_string("/sys/fs/cgroup/cpu.max")
             .unwrap_or_else(|_| "unavailable".into()),
         raw_metadata: Some(raw),
     };
-    let mut engine = Engine::new(cfg.clone(), u, accounts)?;
     let run_id = manifest.run_id.clone();
     let journal = Journal::open(&root, manifest)?;
     if root.join("blocked.json").exists() {

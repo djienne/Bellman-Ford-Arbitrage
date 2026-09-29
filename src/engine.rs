@@ -82,6 +82,7 @@ pub struct RouteState {
     pub peak_bps: Option<f64>,
     pub depth_observable: bool,
     pub depth_coverage_ns: u64,
+    pub depth_valid_until_ns: u64,
     pub dormant: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,6 +113,7 @@ pub struct Stats {
     pub receipt_to_hot: Histogram,
     pub hot_cycles_evaluated: u64,
     pub deadline_lag: Histogram,
+    pub arrival_sources: BTreeMap<String, u64>,
 }
 
 pub struct Engine {
@@ -133,6 +135,8 @@ pub struct Engine {
     use_hot: bool,
     pub(crate) legacy_shadow: bool,
     pub model_version: u32,
+    pub paper_epoch: Option<String>,
+    pub predecessor_run_id: Option<String>,
     pub diagnostic: Option<Diagnostic>,
     pub diagnostic_journal: Vec<Value>,
     reconcile: Option<(u64, u64)>,
@@ -172,6 +176,8 @@ impl Engine {
             use_hot: false,
             legacy_shadow: false,
             model_version: 3,
+            paper_epoch: None,
+            predecessor_run_id: None,
             diagnostic: None,
             diagnostic_journal: Vec::new(),
             reconcile: None,
@@ -269,7 +275,11 @@ impl Engine {
         for s in &mut self.states {
             if s.depth_observable {
                 s.depth_coverage_ns += now
-                    .min(s.eligibility_until_ns)
+                    .min(if self.model_version >= 4 {
+                        s.depth_valid_until_ns
+                    } else {
+                        s.eligibility_until_ns
+                    })
                     .saturating_sub(s.last_account_ns);
             }
             let end = now.min(s.valid_until_ns);
@@ -369,13 +379,14 @@ impl Engine {
                             if self.books[m].apply(&up) {
                                 self.stats.accepted_books += 1;
                                 for a in &mut self.accounts {
-                                    a.shadow.update_depth(
+                                    a.shadow.update_model(
                                         &up,
                                         if self.legacy_shadow {
                                             None
                                         } else {
                                             Some(if self.config.l2_fast { 5 } else { 20 })
                                         },
+                                        self.model_version,
                                     );
                                 }
                                 affected = self.by_market[m].clone();
@@ -421,7 +432,11 @@ impl Engine {
                 || (s.eligible && s.eligibility_until_ns < self.now)
                 || (self.model_version >= 3
                     && s.depth_observable
-                    && s.eligibility_until_ns < self.now)
+                    && (if self.model_version >= 4 {
+                        s.depth_valid_until_ns
+                    } else {
+                        s.eligibility_until_ns
+                    }) < self.now)
             {
                 affected.push(i);
             }
@@ -472,18 +487,19 @@ impl Engine {
             if let Some(d) = &self.diagnostic {
                 if self.now >= d.after_ns && !a.tried.contains_key(&d.route) {
                     let r = self.routes.iter().find(|r| r.id == d.route).unwrap();
-                    if quantity::estimate(
+                    if quantity::estimate_model(
                         r,
                         d.amount,
                         &self.books,
                         &self.universe,
                         &self.config,
                         self.now,
+                        self.model_version,
                     )
                     .is_ok()
                         && quantity::amount(&a.balances, self.universe.usdc) >= d.amount
                     {
-                        a.start(
+                        a.start_model(
                             r,
                             0,
                             d.amount,
@@ -492,6 +508,7 @@ impl Engine {
                             &self.config,
                             self.now,
                             &mut events,
+                            self.model_version,
                         )?;
                     }
                 }
@@ -520,7 +537,7 @@ impl Engine {
                     .then(a.start.cmp(&b.start))
             });
             if let Some((r, epoch, e)) = choices.first() {
-                a.start(
+                a.start_model(
                     r,
                     *epoch,
                     e.start,
@@ -529,11 +546,21 @@ impl Engine {
                     &self.config,
                     self.now,
                     &mut events,
+                    self.model_version,
                 )?;
             }
         }
         if self.model_version >= 3 {
             for event in &mut events {
+                if self.model_version >= 4 && event["type"] == "arrived" {
+                    let src = &event["data"]["fill"]["source"];
+                    let key = format!(
+                        "{}:{}",
+                        src["channel"].as_str().unwrap(),
+                        src["scope"].as_str().unwrap()
+                    );
+                    *self.stats.arrival_sources.entry(key).or_default() += 1;
+                }
                 if matches!(
                     event["type"].as_str(),
                     Some("arrived" | "confirmed" | "unobservable")
@@ -601,6 +628,31 @@ impl Engine {
             && r.edges
                 .iter()
                 .all(|e| self.books[e.market].depth(self.now, &self.config).is_ok());
+        if self.model_version >= 4 {
+            let views: Option<Vec<_>> = r
+                .edges
+                .iter()
+                .map(|e| {
+                    self.books[e.market]
+                        .execution_side(e.buy, self.now, &self.config, None, self.model_version)
+                        .ok()
+                })
+                .collect();
+            s.depth_observable = valid
+                && views
+                    .as_ref()
+                    .is_some_and(|v| v.iter().all(|v| v.scope == "l2"));
+            s.eligibility_until_ns = views
+                .as_ref()
+                .and_then(|v| {
+                    v.iter()
+                        .map(|v| v.observation.receipt_ns + self.config.depth_age_ms * 1_000_000)
+                        .min()
+                })
+                .unwrap_or(self.now)
+                .min(s.valid_until_ns);
+            s.depth_valid_until_ns = s.eligibility_until_ns;
+        }
         s.sizes.clear();
         if valid {
             s.gross_bps = Some(gross.exp_m1() * 10_000.0);
@@ -619,13 +671,14 @@ impl Engine {
                     });
                     continue;
                 }
-                match quantity::estimate(
+                match quantity::estimate_model(
                     r,
                     start,
                     &self.books,
                     &self.universe,
                     &self.config,
                     self.now,
+                    self.model_version,
                 ) {
                     Ok(mut e) => {
                         if self.model_version >= 3 {
@@ -719,6 +772,14 @@ impl Engine {
                 row["depth_coverage_ns"] = s.depth_coverage_ns.into();
                 row["dormant"] = s.dormant.into();
             }
+        }
+        if self.model_version >= 4 {
+            report["paper_epoch"] = json!(self.paper_epoch);
+            report["predecessor_run_id"] = json!(self.predecessor_run_id);
+            report["arrival_observation_counts"] = json!(self.stats.arrival_sources);
+            report["coverage"]["depth_scope"] =
+                "full_l2_traded_side; excludes BBO-only quantity".into();
+            report["execution_model_note"] = "local receipt-time proxy; bounded BBO or coherent L2; unknown deeper remainder excluded".into();
         }
         report
     }

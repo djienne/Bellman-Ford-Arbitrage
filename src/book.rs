@@ -35,6 +35,15 @@ pub struct Update {
     pub observation: Observation,
 }
 
+/// A single observed side. Never splice a changed BBO into older deeper levels.
+pub struct ExecutionView<'a> {
+    pub observation: &'a Observation,
+    pub price_observation: &'a Observation,
+    pub rows: &'a [Level],
+    pub channel: &'static str,
+    pub scope: &'static str,
+}
+
 pub fn parse(
     text: &str,
     u: &Universe,
@@ -204,6 +213,73 @@ impl Book {
             "bbo_depth_conflict"
         );
         Ok(d)
+    }
+    pub fn execution_side(
+        &self,
+        buy: bool,
+        now: u64,
+        cfg: &Config,
+        limit: Option<Decimal>,
+        model: u32,
+    ) -> Result<ExecutionView<'_>> {
+        let side = usize::from(buy);
+        if model < 4 {
+            let d = self.depth(now, cfg)?;
+            return Ok(ExecutionView {
+                observation: d,
+                price_observation: d,
+                rows: &d.levels[side],
+                channel: "l2Book",
+                scope: "l2",
+            });
+        }
+        let top = self.latest().context("quote_unavailable")?;
+        ensure!(
+            top.available_ns <= now
+                && now.saturating_sub(top.receipt_ns) <= cfg.quote_age_ms * 1_000_000,
+            "quote_unavailable"
+        );
+        let channel = if self.depth.as_ref().is_some_and(|d| std::ptr::eq(d, top)) {
+            "l2Book"
+        } else {
+            "bbo"
+        };
+        let rows = &top.levels[side];
+        if rows.is_empty()
+            || limit.is_some_and(|l| if buy { rows[0].px > l } else { rows[0].px < l })
+        {
+            return Ok(ExecutionView {
+                observation: top,
+                price_observation: top,
+                rows: &[],
+                channel,
+                scope: "zero",
+            });
+        }
+        if let Some(d) = self.depth.as_ref().filter(|d| {
+            d.available_ns <= now
+                && now.saturating_sub(d.receipt_ns) <= cfg.depth_age_ms * 1_000_000
+                && d.levels[side].first() == rows.first()
+        }) {
+            return Ok(ExecutionView {
+                observation: d,
+                price_observation: top,
+                rows: &d.levels[side],
+                channel: "l2Book",
+                scope: "l2",
+            });
+        }
+        ensure!(
+            now.saturating_sub(top.receipt_ns) <= cfg.depth_age_ms * 1_000_000,
+            "quantity_stale"
+        );
+        Ok(ExecutionView {
+            observation: top,
+            price_observation: top,
+            rows: &rows[..1],
+            channel,
+            scope: "top",
+        })
     }
     pub fn price(&self, e: Edge, now: u64, cfg: &Config) -> Option<Decimal> {
         Some(self.top(now, cfg)?.levels[usize::from(e.buy)][0].px)

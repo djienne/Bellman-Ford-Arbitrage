@@ -31,6 +31,10 @@ pub struct Manifest {
     pub cpu_quota: String,
     #[serde(default)]
     pub raw_metadata: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paper_epoch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predecessor_run_id: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Record {
@@ -273,15 +277,33 @@ pub fn replay_options(
     depth_ms: Option<u64>,
     diagnostic: Option<Diagnostic>,
 ) -> Result<Engine> {
-    let alternative =
-        latencies.is_some() || quote_ms.is_some() || depth_ms.is_some() || diagnostic.is_some();
+    replay_model(dir, latencies, verify, quote_ms, depth_ms, diagnostic, None)
+}
+pub fn replay_model(
+    dir: &Path,
+    latencies: Option<Vec<u64>>,
+    verify: bool,
+    quote_ms: Option<u64>,
+    depth_ms: Option<u64>,
+    diagnostic: Option<Diagnostic>,
+    model: Option<u32>,
+) -> Result<Engine> {
+    ensure!(
+        model.is_none_or(|m| matches!(m, 3 | 4)),
+        "execution model must be 3 or 4"
+    );
+    let alternative = latencies.is_some()
+        || quote_ms.is_some()
+        || depth_ms.is_some()
+        || diagnostic.is_some()
+        || model.is_some();
     ensure!(
         !verify || !alternative,
         "verification requires recorded assumptions and no forced entry"
     );
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=3), "unsupported recording format");
+    ensure!(matches!(m.format, 1..=4), "unsupported recording format");
     let mut cfg = m.config;
     if let Some(ms) = quote_ms {
         cfg.quote_age_ms = ms;
@@ -299,7 +321,15 @@ pub fn replay_options(
     };
     let mut engine = Engine::new(cfg, m.universe, initial)?;
     engine.legacy_shadow = m.format == 1 && !alternative;
-    engine.model_version = if alternative { 3 } else { m.format };
+    engine.model_version = if alternative {
+        model.unwrap_or(4)
+    } else {
+        m.format
+    };
+    if !alternative {
+        engine.paper_epoch = m.paper_epoch;
+        engine.predecessor_run_id = m.predecessor_run_id;
+    }
     if let Some(d) = &diagnostic {
         ensure!(
             engine.routes.iter().any(|r| r.id == d.route),
@@ -421,7 +451,12 @@ fn event_files(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 pub fn checkpoint(run_id: &str, e: &Engine) -> Value {
-    serde_json::json!({"type":"account_checkpoint","run_id":run_id,"accounting_version":e.model_version,"sequence":e.last_sequence,"universe":e.universe,"accounts":e.accounts})
+    let mut value = serde_json::json!({"type":"account_checkpoint","run_id":run_id,"accounting_version":e.model_version,"sequence":e.last_sequence,"universe":e.universe,"accounts":e.accounts});
+    if e.model_version >= 4 {
+        value["paper_epoch"] = serde_json::json!(e.paper_epoch);
+        value["predecessor_run_id"] = serde_json::json!(e.predecessor_run_id);
+    }
+    value
 }
 fn validate_checkpoint(m: &Manifest, report: &Value, terminal: &Record) -> Result<Vec<Account>> {
     let c = &report["recovery"];
@@ -442,6 +477,15 @@ fn validate_checkpoint(m: &Manifest, report: &Value, terminal: &Record) -> Resul
             && terminal.events.last() == Some(c),
         "checkpoint account/metadata mismatch"
     );
+    if m.format >= 4 {
+        ensure!(
+            c["paper_epoch"] == serde_json::json!(m.paper_epoch)
+                && c["predecessor_run_id"] == serde_json::json!(m.predecessor_run_id)
+                && c["paper_epoch"] == report["paper_epoch"]
+                && c["predecessor_run_id"] == report["predecessor_run_id"],
+            "checkpoint epoch mismatch"
+        );
+    }
     Ok(serde_json::from_value(c["accounts"].clone())?)
 }
 fn last_record(path: &Path) -> Result<Record> {
@@ -472,8 +516,8 @@ fn last_record(path: &Path) -> Result<Record> {
 pub fn recover(dir: &Path) -> Result<(Universe, Vec<Account>)> {
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=3), "unsupported recovery format");
-    if m.format == 3 && dir.join("final.json").exists() {
+    ensure!(matches!(m.format, 1..=4), "unsupported recovery format");
+    if m.format >= 3 && dir.join("final.json").exists() {
         let report: Value =
             serde_json::from_reader(BufReader::new(File::open(dir.join("final.json"))?))?;
         if report["recording_complete"] == true {
@@ -484,6 +528,65 @@ pub fn recover(dir: &Path) -> Result<(Universe, Vec<Account>)> {
     }
     let prior = replay(dir, None, true)?;
     Ok((prior.universe, prior.accounts))
+}
+/// Explicit experiment funding only. Same-ID restarts recover rather than refund.
+pub fn paper_epoch(
+    root: &Path,
+    prior: Option<&Path>,
+    requested: Option<&str>,
+) -> Result<(Option<String>, Option<String>, bool)> {
+    let previous: Option<Manifest> = prior
+        .map(|p| -> Result<_> {
+            Ok(serde_json::from_reader(BufReader::new(File::open(
+                p.join("manifest.json"),
+            )?))?)
+        })
+        .transpose()?;
+    let Some(id) = requested else {
+        return Ok((
+            previous.as_ref().and_then(|m| m.paper_epoch.clone()),
+            previous.and_then(|m| m.predecessor_run_id),
+            false,
+        ));
+    };
+    ensure!(
+        !id.is_empty()
+            && id.len() <= 64
+            && id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+        "invalid paper epoch ID"
+    );
+    if previous
+        .as_ref()
+        .is_some_and(|m| m.paper_epoch.as_deref() == Some(id))
+    {
+        return Ok((Some(id.into()), previous.unwrap().predecessor_run_id, false));
+    }
+    if root.exists() {
+        for entry in fs::read_dir(root)? {
+            let path = entry?.path().join("manifest.json");
+            if path.is_file() {
+                let m: Manifest = serde_json::from_reader(BufReader::new(File::open(path)?))?;
+                ensure!(
+                    m.paper_epoch.as_deref() != Some(id),
+                    "paper epoch ID already used; refusing new funding"
+                );
+            }
+        }
+    }
+    if let Some(p) = prior {
+        let final_report: Value = serde_json::from_reader(BufReader::new(
+            File::open(p.join("final.json"))
+                .context("new epoch requires a durable predecessor checkpoint")?,
+        ))?;
+        ensure!(
+            previous.as_ref().unwrap().format >= 3 && final_report["recording_complete"] == true,
+            "new epoch requires a clean predecessor checkpoint"
+        );
+        recover(p)?;
+    }
+    Ok((Some(id.into()), previous.map(|m| m.run_id), true))
 }
 pub fn latest(root: &Path) -> Result<Option<PathBuf>> {
     if !root.exists() {

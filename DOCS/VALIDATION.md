@@ -125,3 +125,47 @@ The smoke candidate was followed by two narrowly scoped startup safeguards: paus
 Continuous service resumed at **21:46:21 UTC**, image **`sha256:f27cb87991c15909fcbd4dbafcb0d6afec7ac93ba044cae1d5be392f305bcd8c`**, run **`run-1790631982022891512`**, with `unless-stopped`, 512 MiB and the central 1-CPU policy. Its source hashes match the workspace. The first minute received 3,929 frames / 3,867 books with zero malformed frames, p99 receipt-to-decision 1.481 ms, no paused/guarded accounts and no unexpected restarts. Its manifest's complete restored accounts equal the smoke's final accounts. Startup through checkpoint recovery, fresh metadata and manifest creation took approximately 0.78 seconds by UTC timestamps; this includes network discovery and is not an isolated recovery benchmark.
 
 Compact test/build/benchmark evidence is in `review/2026-09-28-second-fixes/`; recordings, exact replay outputs, cutover/restart comparisons, diagnostic journal and machine-readable summary are in `runs/review-fixes-validation/`. The first full-day unclean recovery benchmark remains an observation follow-up; periodic checkpoint infrastructure has deliberately not been added. Continue separating model versions in 24-hour/seven-day reviews. Actual exchange execution latency, account-specific fee rounding and market profitability remain unverified.
+
+## Execution observability: format 4 and independent epoch
+
+Completed on **30 September 2026 local time**. Format 4 uses the shared traded-side execution selector for estimates, preparation, arrivals and unwinds. Fresh quotes outside fixed limits establish zero fills; sufficient top-level quantity supports bounded execution. Opposite-side differences do not invalidate coherent traded-side L2. Changed BBO is never merged into older depth. Unknown remainders, including beyond a truncated L2 view, remain unobservable. Each result records its source and distinct price/quantity clocks. The numeric hot kernel and dependencies are unchanged.
+
+**52 release checks passed through Docker Compose** (48 research, three configuration/transport and one allocation check). They cover the recorded price/quantity failures, both order directions, limits, stale quantities, unknown deeper remainders, no shadow consumption on unknown fills, observed removal/replenishment, 250/500-ms boundaries, later-quote exclusion, format-4 replay and epoch funding/recovery. Historical formats 1–3 verified; their complete report fields matched saved references. A same-ID epoch with only 9,500 USDC in the test remains at 9,500 after recovery; an older reused ID and a damaged predecessor checkpoint are rejected.
+
+**Representative public input:** two fixed 40-second windows from `run-1790631982022891512` include the 09:49 and 16:15 UTC failures on 29 September. Their original observations and processing/completion clocks are retained, with fresh accounts and an explicit synthetic connection start. Normal-entry comparisons may enter at different times under the changed eligibility rule. They are counterfactual, not revisions of the original accounts.
+
+Matched-entry forced diagnostics at 1,000 USDC on `107S>150B>255B` isolate the execution changes:
+
+| Window / latency each way | Model 3 | Model 4 |
+|---|---|---|
+| 09:49 / 100 ms | Unknown second-leg fill; account paused | Observed zero fill, followed by unwind; cash change −0.54693142 USDC |
+| 09:49 / 250 and 500 ms | Observable unwind; cash change −0.54693142 each | Observable unwind; same cash change each |
+| 16:15 / 100 and 250 ms | Unknown fill; accounts paused | Full cycles complete, with cash change **−2.03743310 USDC each** |
+| 16:15 / 500 ms | Partial fill, unavailable unwind, retained inventory | Observable unwind; cash change **−1.71911690 USDC** |
+
+These show improved measurement, including losing outcomes. They neither establish live fills nor promise all future attempts are observable. A separate negative-edge forced replay completes once per scenario with cash change −0.95027014 USDC each; residual inventory remains separately marked. An independent Python Decimal audit checked **34 confirmed fills**, all account/token conservation, configured fees, quantity increments, budgets, fixed limits and confirmation times; **27** format-4 arrivals also passed source-clock causality checks. Scenarios are alternatives and never summed.
+
+**Ten-minute public smoke:** `runs/format4-smoke/run-1790722781878884572`, manifest UTC **2026-09-29 22:59:41.879** to terminal UTC **23:09:41.859**, **600.002091989 monotonic seconds**. UTC and monotonic durations differ slightly; UTC is not used for scheduling. One controlled reconnect produced two connections. **40,380 frames**, zero malformed books; exact event verification and the complete replay report matched the recorded final report.
+
+| Measurement | Result |
+|---|---:|
+| CPU quota | 1 CPU, `100000 100000` |
+| Receipt → decision p50 / p95 / p99 | 0.551 / 1.278 / 1.913 ms |
+| Queue age p50 / p99 | 0.521 / 1.866 ms |
+| Cold processing p50 / p99 | 0.026 / 0.199 ms |
+| Hot kernel p50 / p99, separate 1-CPU benchmark | 421 / 1,433 ns |
+| Hot allocations over 200,000 evaluations | 0 |
+| Live paper deadline samples | 0; no measured live dispatch-lag percentile |
+| Sampled smoke CPU / memory | 0.56–1.32% of one core / approximately 8.2–8.5 MiB |
+| Smoke recording volume | 29,554,574 bytes; short-window projection 3.96 GiB/day |
+| Fresh-price coverage, among 30 priced routes | 97.98% |
+| Full-L2 traded-side coverage, among those routes | 76.63% |
+| Fresh-price / full-L2 coverage, all 210 structural routes | 14.00% / 10.95% |
+
+The smoke recorded **five positive fee-net episodes**, peaking at **+4.4674 bps**, below the strict >5-bps entry threshold even before additional size/rounding costs. All accounts retained 10,000 USDC with no attempt. The 180 dormant routes remain subscribed. Coverage is from a different window and model than prior smoke runs; it is not a controlled improvement estimate. General BBO availability is not full-L2 coverage.
+
+**Cutover:** the predecessor `run-1790631982022891512` shut down cleanly at terminal sequence **8,277,195**. Independent validation bound its complete accounts/shadow state to the durable terminal checkpoint and confirmed unchanged balances, reservations, holdings and pending fills. Those old unresolved accounts remain archived. A separately funded epoch **`bbo-ioc-v4-2026-09-30`** began in `run-1790723514787134963`; a controlled restart then restored every account field and the nonempty shadow ledgers into **`run-1790723635423981499`** without additional funding. The same-ID command is idempotent; ordinary startup also restores the epoch.
+
+Continuous collection remains on image `sha256:66569e843ca1ba4e1fed1bc7685d4ba4639cc43829d3963931478e5b3fd0468c`, 1 CPU, 512 MiB and `unless-stopped`. Embedded Rust/Cargo hashes match the workspace. The first two minutes after restart received **7,365 frames**, zero malformed books, p99 decision **1.960 ms**, and three unpaused 10,000-USDC accounts. No new-epoch paper entry was observed in that short interval. The daily follow-up now separates execution sources, epochs and old unresolved exposure. Recording occupied about **4.60 GiB** under the 50-GiB cap, approximately **11.45 days** remaining at the smoke rate; host disk had about 305 GiB free. These projections depend on activity.
+
+Compact release/benchmark/accounting/cutover evidence is in `review/2026-09-30-execution-model-4/`. Raw smoke data, fixed windows, counterfactual reports, diagnostic journals and runnable independent checks are in `runs/format4-validation/` and `runs/format4-smoke/`. Actual exchange execution latency, fee rounding and live profitability remain unverified. Keep all observation periods and paper epochs distinct.

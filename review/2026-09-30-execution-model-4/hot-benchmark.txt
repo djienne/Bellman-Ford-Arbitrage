@@ -1,0 +1,6 @@
+
+running 1 test
+test all_affected_cycles_without_hot_allocations ... {"cpu_quota":"100000 100000\n","hot_allocations":0,"iterations":200000,"markets":29,"max_ns":127402,"p50_ns":421,"p95_ns":1012,"p99_ns":1433,"routes":210}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s

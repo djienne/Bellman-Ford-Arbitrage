@@ -1,0 +1,32 @@
+[
+  {
+    "report": "forced-window0-model3.json",
+    "confirmed_fills": 5,
+    "causal_source_checks": 0,
+    "conservation": true
+  },
+  {
+    "report": "forced-window0-model4.json",
+    "confirmed_fills": 8,
+    "causal_source_checks": 8,
+    "conservation": true
+  },
+  {
+    "report": "forced-window1-model3.json",
+    "confirmed_fills": 2,
+    "causal_source_checks": 0,
+    "conservation": true
+  },
+  {
+    "report": "forced-window1-model4.json",
+    "confirmed_fills": 10,
+    "causal_source_checks": 10,
+    "conservation": true
+  },
+  {
+    "report": "negative-diagnostic.json",
+    "confirmed_fills": 9,
+    "causal_source_checks": 9,
+    "conservation": true
+  }
+]

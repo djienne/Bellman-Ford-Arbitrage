@@ -1,0 +1,76 @@
+
+running 3 tests
+test hyperliquid::tests::depth_mode_is_explicit_and_legacy_config_remains_slow ... ok
+test hyperliquid::tests::overflow_returns_error_instead_of_silently_dropping_market_data ... ok
+test hyperliquid::tests::obsolete_reconnect_request_cannot_close_new_generation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test all_affected_cycles_without_hot_allocations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+running 48 tests
+test bad_metadata_reference_is_rejected ... ok
+test bbo_does_not_refresh_stale_depth_or_pongs_refresh_books ... ok
+test bf_finds_forward_witness ... ok
+test clock_jump_does_not_change_monotonic_latency ... ok
+test decimal_fees_lots_and_minimum_notional ... ok
+test duplicate_display_names_do_not_merge_assets ... ok
+test depth_coverage_expires_independently_and_empty_route_reactivates ... ok
+test episode_end_has_no_grace_inflation ... ok
+test empty_book_is_known_zero_fill_and_reappearance_replenishes ... ok
+test failed_unwind_retains_exposure_and_pauses_account ... ok
+test fast_snapshot_replaces_old_deep_liquidity ... ok
+test fractional_fee_and_threshold_are_unrounded ... ok
+test future_quote_cannot_rewrite_arrival ... ok
+test invalid_prices_sizes_and_crosses_rejected ... ok
+test ioc_precision_never_exceeds_adverse_bound ... ok
+test latency_arrival_confirmation_and_conservation ... ok
+test metadata_remap_preserves_pending_orders_and_depletion ... ok
+test older_cross_channel_update_cannot_refresh_liquidity ... ok
+test overlapping_cycles_are_all_evaluated ... ok
+test partial_fill_is_unwound_not_magically_restored ... ok
+test marked_inventory_is_not_cash_and_unknown_exposure_never_resumes ... ok
+test recorded_bbo_failures_have_bounded_v4_outcomes ... ok
+test restart_preserves_consumed_shadow_liquidity ... ok
+test no_arbitrage_moving_single_market ... ok
+test restart_keeps_reserved_funds_and_marks_pending_unresolved ... ok
+test production_fee_dust_continues_without_restoring_cash ... ok
+test processing_delay_is_added_to_submission_and_replayed ... ok
+test v4_quantity_expiry_and_truncated_remainders_do_not_fabricate_fills ... ok
+test v4_observed_zero_fill_waits_for_confirmation_and_excludes_later_quotes ... ok
+test v4_shadow_removal_and_replenishment_require_evidence ... ok
+test unavailable_arrival_is_censored ... ok
+test truncated_snapshots_preserve_consumed_liquidity_on_both_sides ... ok
+test unchanged_snapshot_does_not_refill_shadow ... ok
+test subminimum_residual_is_preserved_as_inventory ... ok
+test v4_side_validity_unknown_depth_and_zero_fill_are_conservative ... ok
+test cycle_bound_and_capacity_are_explicit ... ok
+test all_210_route_identities_remain_observable ... ok
+test saved_metadata_identity_and_complete_cycles ... ok
+test v3_clean_report_requires_durable_terminal_checkpoint ... ok
+test terminal_checkpoint_retains_reservation_and_refuses_reconciliation ... ok
+test journal_roundtrip_replays_actual_path ... ok
+test clean_checkpoint_and_forced_negative_replay_use_real_accounting ... ok
+test journal_limits_and_disk_errors_surface ... ok
+test restart_pointer_survives_a_backward_wall_clock ... ok
+test replay_preserves_legacy_shadow_model_and_uses_new_model_for_format_two ... ok
+test v4_epochs_preserve_predecessor_and_never_repeat_funding ... ok
+test hot_pipeline_matches_reference_and_replays ... ok
+test quiet_feed_order_deadline_uses_one_shot_timer ... ok
+
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

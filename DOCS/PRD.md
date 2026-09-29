@@ -1,6 +1,6 @@
 # Hyperliquid spot screener and paper research
 
-Updated 28 September 2026. This document replaces the original Binance/Bellman–Ford-only product specification. The approved task is a public, continuously running spot-cycle screener and causal paper simulator, with no real-order capability.
+Updated 30 September 2026. This document replaces the original Binance/Bellman–Ford-only product specification. The approved task is a public, continuously running spot-cycle screener and causal paper simulator, with no real-order capability.
 
 ## Purpose and scope
 
@@ -22,7 +22,7 @@ The approved fast-depth update explicitly requests `l2Book` with `fast: true` (f
 
 Default independent accounts: 10,000 USDC at 100/250/500 ms each way per order. Candidate amounts: 25/100/250/1,000 USDC. Record all positive fee-net candidates; enter only if the unrounded size-feasible return exceeds 5 bps. Rank by absolute estimated USDC profit, then fewer legs, then stable identity. Permit one attempt per continuous eligibility episode and one cycle in flight per account.
 
-Reserve immediately. Fix IOC quantities/limits using current eligible depth, a 2-bps adverse tolerance, exact lots, price precision and the 10-quote-token minimum. Execute against eligible shadow depth at arrival and make only confirmed net proceeds available after confirmation. Use Decimal balances and fractional per-market fees with recorded provenance. Unverified discounts remain unapplied.
+Reserve immediately. Fix IOC quantities/limits using current eligible depth, a 2-bps adverse tolerance, exact lots, price precision and the 10-quote-token minimum. Format 4 shares one traded-side execution view across estimates, preparation and fills: fresh BBO supports an entire top-level order or a known zero fill outside its fixed limit; deeper execution requires fresh coherent L2. Never splice changed BBO into old deeper levels, refresh L2 with BBO, or treat unknown deeper remainders as observed partial fills. Ignore changes only on the opposite side. Execute against scenario shadow liquidity at arrival and make only confirmed net proceeds available after confirmation. Journal source clocks and distinguish bounded BBO outcomes from full-L2 coverage. Use Decimal balances and fractional per-market fees with recorded provenance. Unverified discounts remain unapplied.
 
 Partial/failing forward legs trigger reverse-path unwinds at 50-bps tolerance with identical delays. Preserve dust and losses. Unfinished unwind exposure pauses the account while screening continues. Missing arrival observations make an attempt unobservable, excluding it from execution-performance claims. Maintain shared per-account shadow liquidity across routes and restarts; identical snapshots cannot repeatedly fund fills.
 
@@ -30,7 +30,9 @@ Partial/failing forward legs trigger reverse-path unwinds at 50-bps tolerance wi
 
 The existing executable supplies `discover`, `run`, and `replay`. Store append-only raw inputs, clocks, configuration, metadata, order/fill/balance and episode events. Replay must preserve original processing delays and deadlines, and support latency/freshness sensitivity runs. Record minute summaries, full route coverage, rankings, separate accounts, rejected opportunities, open exposure and unobservable attempts.
 
-Use this project's Docker Compose service with persistent `runs`, `unless-stopped` and the centrally managed 1-CPU limit. Rotate at one hour/256 MiB and block at 50 GiB without deleting evidence or looping restarts. Storage errors and bounded-channel overflows invalidate the segment. Validated format-3 clean checkpoints restore all account facts; older/unclean runs fall back to verified replay. Identity remapping must preserve inventory and shadow depletion. The sibling XEMM project remains untouched.
+Use this project's Docker Compose service with persistent `runs`, `unless-stopped` and the centrally managed 1-CPU limit. Rotate at one hour/256 MiB and block at 50 GiB without deleting evidence or looping restarts. Storage errors and bounded-channel overflows invalidate the segment. Validated format-3/4 clean checkpoints restore all account facts; older/unclean runs fall back to verified replay. Identity remapping must preserve inventory and shadow depletion. The sibling XEMM project remains untouched.
+
+`replay --execution-model 3|4` compares fresh accounts under explicitly counterfactual assumptions and cannot verify original events. `run --new-paper-epoch ID` starts a separate, explicitly funded experiment only after validating the predecessor's durable checkpoint. Same-ID restarts restore accounts; older IDs cannot receive fresh funding. Preserve old unresolved accounts in their original evidence and keep epoch outcomes separate.
 
 The second-review changes allow confirmed, untradeable dust up to a fresh indicative total of 10 USDC per account, rechecked before entry. Marks are separate from cash profit and cannot fund orders. Unknown fills keep their reservation and pending order unresolved. A narrow journaled dust reconciliation cannot clear uncertain exposure. Use one-shot order deadlines and report actual dispatch lag. Add replay-only forced route/size diagnostics with separate accounts, and separate structural, dormant, fresh-price and executable-depth coverage. Historical formats retain original behavior under verification.
 

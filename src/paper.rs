@@ -93,6 +93,20 @@ impl Account {
         now: u64,
         out: &mut Vec<Value>,
     ) -> Result<()> {
+        self.start_model(r, episode, start, books, u, cfg, now, out, 3)
+    }
+    pub fn start_model(
+        &mut self,
+        r: &Route,
+        episode: u64,
+        start: Decimal,
+        books: &[Book],
+        u: &Universe,
+        cfg: &Config,
+        now: u64,
+        out: &mut Vec<Value>,
+        model: u32,
+    ) -> Result<()> {
         ensure!(
             self.attempt.is_none() && self.paused.is_none(),
             "account busy"
@@ -101,7 +115,7 @@ impl Account {
         let forward = r
             .funded_edges(u)
             .ok_or_else(|| anyhow::anyhow!("no USDC route"))?;
-        let order = quantity::prepare(
+        let order = quantity::prepare_model(
             forward[0],
             start,
             &books[forward[0].market],
@@ -109,6 +123,7 @@ impl Account {
             cfg,
             now,
             cfg.slippage_bps,
+            model,
         )?;
         add(&mut self.balances, u.usdc, -start);
         self.tried.insert(r.id.clone(), episode);
@@ -165,13 +180,14 @@ impl Account {
             let mut p = a.pending.take().unwrap();
             if !p.arrived {
                 p.arrived = true;
-                match quantity::execute(
+                match quantity::execute_model(
                     &p.order,
                     &books[p.order.edge.market],
                     u,
                     cfg,
                     at,
                     Some(&mut self.shadow),
+                    model,
                 ) {
                     Ok(f) => {
                         self.log(
@@ -260,7 +276,7 @@ impl Account {
             let e = legs[a.next];
             let input = amount(&a.holdings, e.from(u));
             let unwinding = a.unwind.is_some();
-            let order = quantity::prepare(
+            let order = quantity::prepare_model(
                 e,
                 input,
                 &books[e.market],
@@ -272,6 +288,7 @@ impl Account {
                 } else {
                     cfg.slippage_bps
                 },
+                model,
             );
             match order {
                 Ok(o) => {

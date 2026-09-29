@@ -22,6 +22,262 @@ fn config() -> Config {
     }
 }
 
+fn bbo(m: usize, bid: &str, bid_size: &str, ask: &str, ask_size: &str, time: u64) -> String {
+    json!({"channel":"bbo","data":{"coin":format!("@{}",m+1),"time":time,
+        "bbo":[{"px":bid,"sz":bid_size},{"px":ask,"sz":ask_size}]}})
+    .to_string()
+}
+
+#[test]
+fn recorded_bbo_failures_have_bounded_v4_outcomes() {
+    let cfg = Config::default();
+    let u = universe(&cfg);
+    let buy = bellman_arb::market::Edge {
+        market: 0,
+        buy: true,
+    };
+    let mut book = Book::default();
+    let mut shadow = Shadow::default();
+    for (text, at) in [
+        (raw(0, "88.299", "88.3", "11.33", 1790675378175), 1),
+        (
+            bbo(0, "88.299", "12.67", "88.483", "0.17", 1790675378503),
+            286_000_000,
+        ),
+    ] {
+        let up = book::parse(&text, &u, at, at).unwrap().unwrap();
+        assert!(book.apply(&up));
+        shadow.update(&up);
+    }
+    let order = quantity::Order {
+        edge: buy,
+        qty: dec("11.32").unwrap(),
+        limit: dec("88.317").unwrap(),
+        budget: Decimal::from(1000),
+        source: None,
+    };
+    assert!(quantity::execute_model(&order, &book, &u, &cfg, 301_000_000, None, 3).is_err());
+    let zero = quantity::execute_model(&order, &book, &u, &cfg, 301_000_000, Some(&mut shadow), 4)
+        .unwrap();
+    assert_eq!(zero.qty, Decimal::ZERO);
+    assert_eq!(zero.source.unwrap().scope, "zero");
+
+    let mut book = Book::default();
+    let mut shadow = Shadow::default();
+    for (text, at) in [
+        (raw(0, "0.9994", "0.9999", "123084.58", 1790698552126), 1),
+        (
+            bbo(
+                0,
+                "0.9994",
+                "39616.74",
+                "0.9999",
+                "122081.42",
+                1790698552264,
+            ),
+            69_000_000,
+        ),
+    ] {
+        let up = book::parse(&text, &u, at, at).unwrap().unwrap();
+        assert!(book.apply(&up));
+        shadow.update(&up);
+    }
+    let order = quantity::prepare_model(
+        buy,
+        Decimal::from(1000),
+        &book,
+        &u,
+        &cfg,
+        250_000_000,
+        cfg.slippage_bps,
+        4,
+    )
+    .unwrap();
+    let fill = quantity::execute_model(&order, &book, &u, &cfg, 250_000_000, Some(&mut shadow), 4)
+        .unwrap();
+    assert_eq!(fill.qty, order.qty);
+    assert_eq!(fill.gross, fill.received + fill.fee);
+    assert_eq!(fill.source.as_ref().unwrap().scope, "top");
+    let level = &book.bbo.as_ref().unwrap().levels[1][0];
+    assert_eq!(shadow.available(buy, level), level.sz - fill.qty);
+    assert_eq!(fill.source.unwrap().quantity_age_ns, 181_000_000);
+}
+
+#[test]
+fn v4_side_validity_unknown_depth_and_zero_fill_are_conservative() {
+    let cfg = Config::default();
+    let u = universe(&cfg);
+    for buy in [true, false] {
+        let edge = bellman_arb::market::Edge { market: 0, buy };
+        let mut book = Book::default();
+        book.apply(
+            &book::parse(&raw(0, "9.99", "10", "1000", 1), &u, 1, 1)
+                .unwrap()
+                .unwrap(),
+        );
+        let text = if buy {
+            bbo(0, "9.98", "20", "10", "1000", 2)
+        } else {
+            bbo(0, "9.99", "1000", "10.01", "20", 2)
+        };
+        book.apply(&book::parse(&text, &u, 2, 2).unwrap().unwrap());
+        assert!(book.depth(2, &cfg).is_err());
+        assert_eq!(
+            book.execution_side(buy, 2, &cfg, None, 4).unwrap().scope,
+            "l2"
+        );
+        let changed = bbo(0, "9.99", "1", "10", "1", 3);
+        book.apply(&book::parse(&changed, &u, 3, 3).unwrap().unwrap());
+        assert_eq!(
+            book.execution_side(buy, 3, &cfg, None, 4).unwrap().scope,
+            "top"
+        );
+        let mut order = quantity::Order {
+            edge,
+            qty: Decimal::from(2),
+            limit: if buy {
+                dec("10.01").unwrap()
+            } else {
+                dec("9.98").unwrap()
+            },
+            budget: Decimal::from(100),
+            source: None,
+        };
+        assert!(quantity::execute_model(&order, &book, &u, &cfg, 3, None, 4)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown_deeper"));
+        assert!(quantity::prepare_model(
+            edge,
+            Decimal::from(100),
+            &book,
+            &u,
+            &cfg,
+            3,
+            cfg.slippage_bps,
+            4
+        )
+        .is_err());
+        order.limit = if buy {
+            Decimal::from(10)
+        } else {
+            dec("9.99").unwrap()
+        };
+        assert_eq!(
+            quantity::execute_model(&order, &book, &u, &cfg, 3, None, 4)
+                .unwrap()
+                .qty,
+            Decimal::ONE
+        );
+        order.limit = if buy {
+            dec("9.99").unwrap()
+        } else {
+            Decimal::from(10)
+        };
+        assert_eq!(
+            quantity::execute_model(&order, &book, &u, &cfg, 3, None, 4)
+                .unwrap()
+                .qty,
+            Decimal::ZERO
+        );
+        assert!(quantity::execute_model(&order, &book, &u, &cfg, 1_000_000_004, None, 4).is_err());
+        book.invalidate("disconnect");
+        assert!(book.execution_side(buy, 4, &cfg, None, 4).is_err());
+    }
+}
+
+#[test]
+fn v4_shadow_removal_and_replenishment_require_evidence() {
+    let cfg = config();
+    let u = universe(&cfg);
+    for buy in [true, false] {
+        let edge = bellman_arb::market::Edge { market: 0, buy };
+        let original = book::parse(&bbo(0, "9.99", "10", "10", "10", 1), &u, 1, 1)
+            .unwrap()
+            .unwrap();
+        let level = original.observation.levels[usize::from(buy)][0].clone();
+        let mut shadow = Shadow::default();
+        shadow.update_model(&original, Some(5), 4);
+        shadow.consume(edge, level.px, Decimal::from(7));
+        shadow.update_model(&original, Some(5), 4);
+        assert_eq!(shadow.available(edge, &level), Decimal::from(3));
+        let better = if buy {
+            bbo(0, "9.98", "10", "9.99", "10", 2)
+        } else {
+            bbo(0, "10", "10", "10.01", "10", 2)
+        };
+        shadow.update_model(
+            &book::parse(&better, &u, 2, 2).unwrap().unwrap(),
+            Some(5),
+            4,
+        );
+        shadow.update_model(&original, Some(5), 4);
+        assert_eq!(shadow.available(edge, &level), Decimal::from(3));
+        let worse = if buy {
+            bbo(0, "9.99", "10", "10.01", "10", 3)
+        } else {
+            bbo(0, "9.98", "10", "10", "10", 3)
+        };
+        shadow.update_model(&book::parse(&worse, &u, 3, 3).unwrap().unwrap(), Some(5), 4);
+        assert_eq!(shadow.available(edge, &level), Decimal::ZERO);
+        shadow.update_model(&original, Some(5), 4);
+        assert_eq!(shadow.available(edge, &level), Decimal::from(10));
+    }
+}
+
+#[test]
+fn v4_observed_zero_fill_waits_for_confirmation_and_excludes_later_quotes() {
+    let mut e = ready();
+    e.model_version = 4;
+    let order = e.accounts[0]
+        .attempt
+        .as_ref()
+        .unwrap()
+        .pending
+        .as_ref()
+        .unwrap()
+        .clone();
+    step(
+        &mut e,
+        order.arrival_ns - 1,
+        InputKind::Frame {
+            text: bbo(0, "10", "1000", "10.1", "1000", 2),
+        },
+    );
+    assert!(
+        !e.accounts[0]
+            .attempt
+            .as_ref()
+            .unwrap()
+            .pending
+            .as_ref()
+            .unwrap()
+            .arrived
+    );
+    let events = step(
+        &mut e,
+        order.arrival_ns + 1,
+        InputKind::Frame {
+            text: raw(0, "9.99", "10", "1000", 3),
+        },
+    );
+    assert!(events
+        .iter()
+        .any(|v| v["type"] == "arrived" && v["data"]["fill"]["qty"] == "0"));
+    assert_eq!(e.accounts[0].balances[&0], Decimal::from(9900));
+    assert!(e.accounts[0]
+        .attempt
+        .as_ref()
+        .unwrap()
+        .holdings
+        .contains_key(&0));
+    e.config.min_profit_bps = Decimal::from(10000);
+    step(&mut e, order.confirmation_ns, InputKind::Clock);
+    assert!(e.accounts[0].attempt.is_none() && e.accounts[0].paused.is_none());
+    assert_eq!(e.accounts[0].balances[&0], Decimal::from(10000));
+    assert_eq!(e.accounts[0].unobservable, 0);
+}
+
 #[test]
 fn production_fee_dust_continues_without_restoring_cash() {
     let cfg = Config {
@@ -211,6 +467,8 @@ fn recorded_v3() -> (std::path::PathBuf, std::path::PathBuf, Engine) {
             source_version: "test".into(),
             cpu_quota: "test".into(),
             raw_metadata: None,
+            paper_epoch: None,
+            predecessor_run_id: None,
         },
     )
     .unwrap();
@@ -255,6 +513,100 @@ fn recorded_v3() -> (std::path::PathBuf, std::path::PathBuf, Engine) {
     report["recovery"] = bellman_arb::journal::checkpoint("run-1", &e);
     journal.finish(report).unwrap();
     (root, dir, e)
+}
+
+#[test]
+fn v4_epochs_preserve_predecessor_and_never_repeat_funding() {
+    let (root, prior, baseline) = recorded_v3();
+    let original = std::fs::read(prior.join("final.json")).unwrap();
+    let selection = bellman_arb::journal::paper_epoch(&root, Some(&prior), Some("epoch4")).unwrap();
+    assert_eq!(
+        selection,
+        (Some("epoch4".into()), Some("run-1".into()), true)
+    );
+    let mut previous = prior.clone();
+    for id in ["epoch4", "epoch5"] {
+        let mut e = Engine::new(baseline.config.clone(), baseline.universe.clone(), None).unwrap();
+        e.model_version = 4;
+        e.paper_epoch = Some(id.into());
+        e.predecessor_run_id = Some(previous.file_name().unwrap().to_str().unwrap().into());
+        // A restored account below initial funding must stay below initial funding.
+        e.accounts[0].balances.insert(0, Decimal::from(9500));
+        let run_id = format!("run-{id}");
+        let j = Journal::open(
+            &root,
+            Manifest {
+                format: 4,
+                run_id: run_id.clone(),
+                created_utc_ns: 0,
+                config: e.config.clone(),
+                universe: e.universe.clone(),
+                initial_accounts: Some(e.accounts.clone()),
+                source_version: "test".into(),
+                cpu_quota: "test".into(),
+                raw_metadata: None,
+                paper_epoch: e.paper_epoch.clone(),
+                predecessor_run_id: e.predecessor_run_id.clone(),
+            },
+        )
+        .unwrap();
+        let dir = j.dir.clone();
+        let x = input(
+            &e,
+            1,
+            InputKind::Stop {
+                reason: "test".into(),
+            },
+        );
+        let mut events = e.step(&x).unwrap();
+        e.complete_step(&x, 1, &mut events).unwrap();
+        events.push(bellman_arb::journal::checkpoint(&run_id, &e));
+        j.record(Record {
+            input: x,
+            completed_ns: 1,
+            events,
+        })
+        .unwrap();
+        let mut report = e.report();
+        report["recording_complete"] = true.into();
+        report["recovery"] = bellman_arb::journal::checkpoint(&run_id, &e);
+        j.finish(report).unwrap();
+        assert_eq!(
+            bellman_arb::journal::replay(&dir, None, true)
+                .unwrap()
+                .report(),
+            e.report()
+        );
+        assert_eq!(
+            bellman_arb::journal::recover(&dir).unwrap().1[0].balances[&0],
+            Decimal::from(9500)
+        );
+        assert!(
+            !bellman_arb::journal::paper_epoch(&root, Some(&dir), Some(id))
+                .unwrap()
+                .2
+        );
+        assert_eq!(std::fs::read(prior.join("final.json")).unwrap(), original);
+        assert!(
+            bellman_arb::journal::replay_model(&dir, None, true, None, None, None, Some(4))
+                .is_err()
+        );
+        previous = dir;
+    }
+    assert!(bellman_arb::journal::paper_epoch(&root, Some(&previous), Some("epoch4")).is_err());
+    assert_eq!(
+        bellman_arb::journal::paper_epoch(&root, Some(&previous), None)
+            .unwrap()
+            .0
+            .as_deref(),
+        Some("epoch5")
+    );
+    let final_path = previous.join("final.json");
+    let mut damaged: Value = serde_json::from_slice(&std::fs::read(&final_path).unwrap()).unwrap();
+    damaged["accounts"][0]["balances"]["0"] = "10000".into();
+    std::fs::write(final_path, serde_json::to_vec(&damaged).unwrap()).unwrap();
+    assert!(bellman_arb::journal::paper_epoch(&root, Some(&previous), Some("epoch6")).is_err());
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -315,6 +667,8 @@ fn v3_clean_report_requires_durable_terminal_checkpoint() {
             source_version: "test".into(),
             cpu_quota: "test".into(),
             raw_metadata: None,
+            paper_epoch: None,
+            predecessor_run_id: None,
         },
     )
     .unwrap();
@@ -354,6 +708,8 @@ fn terminal_checkpoint_retains_reservation_and_refuses_reconciliation() {
             source_version: "test".into(),
             cpu_quota: "test".into(),
             raw_metadata: None,
+            paper_epoch: None,
+            predecessor_run_id: None,
         },
     )
     .unwrap();
@@ -855,6 +1211,8 @@ fn restart_pointer_survives_a_backward_wall_clock() {
                 source_version: "test".into(),
                 cpu_quota: "test".into(),
                 raw_metadata: None,
+                paper_epoch: None,
+                predecessor_run_id: None,
             },
         )
         .unwrap();
@@ -1053,6 +1411,8 @@ fn journal_roundtrip_replays_actual_path() {
         source_version: "test".into(),
         cpu_quota: "test".into(),
         raw_metadata: None,
+        paper_epoch: None,
+        predecessor_run_id: None,
     };
     let j = Journal::open(&temp, m).unwrap();
     let dir = j.dir.clone();
@@ -1248,6 +1608,8 @@ fn journal_limits_and_disk_errors_surface() {
         source_version: "test".into(),
         cpu_quota: "test".into(),
         raw_metadata: None,
+        paper_epoch: None,
+        predecessor_run_id: None,
     };
     let j = Journal::open(&root, make("run-1")).unwrap();
     let mut e = ready();
@@ -1330,85 +1692,139 @@ fn processing_delay_is_added_to_submission_and_replayed() {
 
 #[test]
 fn hot_pipeline_matches_reference_and_replays() {
-    let cfg = config();
-    let u = universe(&cfg);
-    let mut live = Engine::new(cfg.clone(), u.clone(), None).unwrap();
-    let mut reference = Engine::new(cfg.clone(), u.clone(), None).unwrap();
-    live.model_version = 2;
-    reference.model_version = 2;
-    let mut hot = bellman_arb::hot::Core::new(&u, &live.routes, &cfg);
-    let mut rates = Vec::with_capacity(live.routes.len());
-    let root = std::env::temp_dir().join(format!(
-        "bellman-hot-replay-{}",
-        bellman_arb::hyperliquid::utc_ns()
-    ));
-    let j = Journal::open(
-        &root,
-        Manifest {
-            format: 2,
-            run_id: "run-1".into(),
-            created_utc_ns: 0,
-            config: cfg,
-            universe: u.clone(),
-            initial_accounts: None,
-            source_version: "test".into(),
-            cpu_quota: "test".into(),
-            raw_metadata: None,
-        },
-    )
-    .unwrap();
-    let dir = j.dir.clone();
-    let mut stream = vec![(10, InputKind::Open)];
-    for (m, b, a) in [(0, "9.99", "10"), (1, "2.02", "2.021"), (2, "5", "5.001")] {
+    for model in [2, 4] {
+        let cfg = config();
+        let u = universe(&cfg);
+        let mut live = Engine::new(cfg.clone(), u.clone(), None).unwrap();
+        let mut reference = Engine::new(cfg.clone(), u.clone(), None).unwrap();
+        live.model_version = model;
+        reference.model_version = model;
+        let mut hot = bellman_arb::hot::Core::new(&u, &live.routes, &cfg);
+        let mut rates = Vec::with_capacity(live.routes.len());
+        let root = std::env::temp_dir().join(format!(
+            "bellman-hot-replay-{}",
+            bellman_arb::hyperliquid::utc_ns()
+        ));
+        let j = Journal::open(
+            &root,
+            Manifest {
+                format: model,
+                run_id: "run-1".into(),
+                created_utc_ns: 0,
+                config: cfg,
+                universe: u.clone(),
+                initial_accounts: None,
+                source_version: "test".into(),
+                cpu_quota: "test".into(),
+                raw_metadata: None,
+                paper_epoch: None,
+                predecessor_run_id: None,
+            },
+        )
+        .unwrap();
+        let dir = j.dir.clone();
+        let mut stream = vec![(10, InputKind::Open)];
+        for (m, b, a) in [(0, "9.99", "10"), (1, "2.02", "2.021"), (2, "5", "5.001")] {
+            stream.push((
+                20 + m as u64 * 10,
+                InputKind::Frame {
+                    text: raw(m, b, a, "1000", 1),
+                },
+            ));
+        }
+        for ms in [250, 500, 750, 1000, 1250, 1500, 1750] {
+            stream.push((ms * 1_000_000, InputKind::Clock));
+        }
         stream.push((
-            20 + m as u64 * 10,
-            InputKind::Frame {
-                text: raw(m, b, a, "1000", 1),
+            2_000_000_000,
+            InputKind::Close {
+                reason: "gap".into(),
             },
         ));
-    }
-    for ms in [250, 500, 750, 1000, 1250, 1500, 1750] {
-        stream.push((ms * 1_000_000, InputKind::Clock));
-    }
-    stream.push((
-        2_000_000_000,
-        InputKind::Close {
-            reason: "gap".into(),
-        },
-    ));
-    for (now, kind) in stream {
-        let mut x = input(&live, now, kind);
-        x.hot_started_ns = now + 1;
-        x.hot_done_ns = now + 2;
-        x.process_ns = now + 3;
-        hot.evaluate(
-            bellman_arb::hot::normalize(&x.event, &u, x.generation, x.receipt_ns),
-            x.hot_started_ns,
-            &mut rates,
-        );
-        let mut a = live.step_hot(&x, &rates).unwrap();
-        let mut b = reference.step(&x).unwrap();
-        live.complete_step(&x, now + 4, &mut a).unwrap();
-        reference.complete_step(&x, now + 4, &mut b).unwrap();
-        assert_eq!(a, b);
+        for (now, kind) in stream {
+            let mut x = input(&live, now, kind);
+            x.hot_started_ns = now + 1;
+            x.hot_done_ns = now + 2;
+            x.process_ns = now + 3;
+            hot.evaluate(
+                bellman_arb::hot::normalize(&x.event, &u, x.generation, x.receipt_ns),
+                x.hot_started_ns,
+                &mut rates,
+            );
+            let mut a = live.step_hot(&x, &rates).unwrap();
+            let mut b = reference.step(&x).unwrap();
+            live.complete_step(&x, now + 4, &mut a).unwrap();
+            reference.complete_step(&x, now + 4, &mut b).unwrap();
+            assert_eq!(a, b);
+            assert_eq!(
+                serde_json::to_value(&live.states).unwrap(),
+                serde_json::to_value(&reference.states).unwrap()
+            );
+            j.record(Record {
+                input: x,
+                completed_ns: now + 4,
+                events: a,
+            })
+            .unwrap();
+        }
+        j.finish(live.report()).unwrap();
+        let restored = bellman_arb::journal::replay(&dir, None, true).unwrap();
         assert_eq!(
-            serde_json::to_value(&live.states).unwrap(),
-            serde_json::to_value(&reference.states).unwrap()
+            serde_json::to_value(live.accounts).unwrap(),
+            serde_json::to_value(restored.accounts).unwrap()
         );
-        j.record(Record {
-            input: x,
-            completed_ns: now + 4,
-            events: a,
-        })
-        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
-    j.finish(live.report()).unwrap();
-    let restored = bellman_arb::journal::replay(&dir, None, true).unwrap();
-    assert_eq!(
-        serde_json::to_value(live.accounts).unwrap(),
-        serde_json::to_value(restored.accounts).unwrap()
-    );
-    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v4_quantity_expiry_and_truncated_remainders_do_not_fabricate_fills() {
+    let mut cfg = Config {
+        l2_fast: true,
+        ..Config::default()
+    };
+    let u = universe(&cfg);
+    for buy in [true, false] {
+        let edge = bellman_arb::market::Edge { market: 0, buy };
+        let up = book::parse(&ladder(99, 100, 5, 1), &u, 1, 1)
+            .unwrap()
+            .unwrap();
+        let mut book = Book::default();
+        book.apply(&up);
+        let mut shadow = Shadow::default();
+        shadow.update_model(&up, Some(5), 4);
+        let mut order = quantity::Order {
+            edge,
+            qty: Decimal::from(60),
+            limit: Decimal::from(if buy { 105 } else { 94 }),
+            budget: Decimal::from(10000),
+            source: None,
+        };
+        assert!(quantity::execute_model(&order, &book, &u, &cfg, 1, Some(&mut shadow), 4).is_err());
+        assert_eq!(
+            shadow.available(edge, &up.observation.levels[usize::from(buy)][0]),
+            Decimal::from(10)
+        );
+        order.limit = Decimal::from(if buy { 104 } else { 95 });
+        assert_eq!(
+            quantity::execute_model(&order, &book, &u, &cfg, 1, None, 4)
+                .unwrap()
+                .qty,
+            Decimal::from(50)
+        );
+        let quote = bbo(0, "99", "2", "100", "2", 2);
+        book.apply(&book::parse(&quote, &u, 2, 2).unwrap().unwrap());
+        cfg.depth_age_ms = 10;
+        assert!(book.execution_side(buy, 11_000_002, &cfg, None, 4).is_err());
+        order.limit = Decimal::from(if buy { 99 } else { 100 });
+        assert_eq!(
+            quantity::execute_model(&order, &book, &u, &cfg, 11_000_002, None, 4)
+                .unwrap()
+                .qty,
+            Decimal::ZERO
+        );
+        cfg.depth_age_ms = 1000;
+    }
 }
 
 #[test]
@@ -1567,6 +1983,8 @@ fn replay_preserves_legacy_shadow_model_and_uses_new_model_for_format_two() {
                 source_version: "test".into(),
                 cpu_quota: "test".into(),
                 raw_metadata: None,
+                paper_epoch: None,
+                predecessor_run_id: None,
             },
         )
         .unwrap();

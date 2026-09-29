@@ -1,0 +1,61 @@
+{
+  "smoke_run": "format4-smoke/run-1790722781878884572",
+  "smoke_created_utc_ns": 1790722781878884572,
+  "smoke_terminal_utc_ns": 1790723381859334525,
+  "smoke_seconds": 600.002091989,
+  "smoke_frames": 40380,
+  "smoke_connections": 2,
+  "smoke_invalid": 0,
+  "smoke_replay_report_equal": true,
+  "historical_formats_1_2_3_equal": true,
+  "smoke_positive_episodes": 5,
+  "smoke_bytes": 29554574,
+  "projected_gib_day": 3.963563421153694,
+  "smoke_peak_fee_net_bps": 4.467363274753476,
+  "runs_bytes": 4941540008,
+  "price_coverage_pct_all": 13.99691739227765,
+  "full_l2_coverage_pct_all": 10.946699735052851,
+  "price_coverage_pct_priced": 97.97842174594355,
+  "full_l2_coverage_pct_priced": 76.62689814536996,
+  "receipt_to_decision": {
+    "max_ns": 4453066,
+    "mean_ns": 623842,
+    "p50_us": 551,
+    "p95_us": 1278,
+    "p99_us": 1913,
+    "percentile_resolution_us": 1,
+    "samples": 40380
+  },
+  "queue_age": {
+    "max_ns": 4441153,
+    "mean_ns": 583309,
+    "p50_us": 521,
+    "p95_us": 1248,
+    "p99_us": 1866,
+    "percentile_resolution_us": 1,
+    "samples": 40380
+  },
+  "processing": {
+    "max_ns": 1103152,
+    "mean_ns": 40533,
+    "p50_us": 26,
+    "p95_us": 130,
+    "p99_us": 199,
+    "percentile_resolution_us": 1,
+    "samples": 40380
+  },
+  "deadline_dispatch_lag": {
+    "max_ns": 0,
+    "mean_ns": 0,
+    "p50_us": 0,
+    "p95_us": 0,
+    "p99_us": 0,
+    "percentile_resolution_us": 1,
+    "samples": 0
+  },
+  "current_run": "run-1790723635423981499",
+  "epoch": "bbo-ioc-v4-2026-09-30",
+  "predecessor": "run-1790631982022891512",
+  "restart_initial_accounts_equal_previous_terminal_accounts": true,
+  "restored_shadow_nonempty": true
+}

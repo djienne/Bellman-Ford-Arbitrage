@@ -1,7 +1,7 @@
 //! Decimal IOC accounting. Fee model: charged in the received asset, rounded up
 //! to its atomic unit. This conservative paper convention is recorded, not a fill guarantee.
 use crate::{
-    book::{Book, Level, Update},
+    book::{Book, ExecutionView, Level, Update},
     config::Config,
     market::{Edge, Route, Universe},
 };
@@ -33,6 +33,45 @@ pub struct Order {
     pub qty: Decimal,
     pub limit: Decimal,
     pub budget: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ExecutionSource>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExecutionSource {
+    pub market_index: u32,
+    pub buy: bool,
+    pub channel: String,
+    pub scope: String,
+    pub exchange_ms: u64,
+    pub receipt_ns: u64,
+    pub available_ns: u64,
+    pub price_exchange_ms: u64,
+    pub price_receipt_ns: u64,
+    pub price_available_ns: u64,
+    pub price_age_ns: u64,
+    pub quantity_age_ns: u64,
+}
+fn source(
+    view: &ExecutionView<'_>,
+    e: Edge,
+    u: &Universe,
+    now: u64,
+    model: u32,
+) -> Option<ExecutionSource> {
+    (model >= 4).then(|| ExecutionSource {
+        market_index: u.markets[e.market].index,
+        buy: e.buy,
+        channel: view.channel.into(),
+        scope: view.scope.into(),
+        exchange_ms: view.observation.exchange_ms,
+        receipt_ns: view.observation.receipt_ns,
+        available_ns: view.observation.available_ns,
+        price_exchange_ms: view.price_observation.exchange_ms,
+        price_receipt_ns: view.price_observation.receipt_ns,
+        price_available_ns: view.price_observation.available_ns,
+        price_age_ns: now.saturating_sub(view.price_observation.receipt_ns),
+        quantity_age_ns: now.saturating_sub(view.observation.receipt_ns),
+    })
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Fill {
@@ -42,6 +81,8 @@ pub struct Fill {
     pub fee: Decimal,
     pub received: Decimal,
     pub fee_token: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ExecutionSource>,
 }
 
 /// Each scenario owns one shared shadow book across all of its routes.
@@ -87,6 +128,21 @@ impl Shadow {
     }
     pub fn update(&mut self, up: &Update) {
         self.update_depth(up, Some(20));
+    }
+    pub fn update_model(&mut self, up: &Update, limit: Option<usize>, model: u32) {
+        if model >= 4 && !up.depth {
+            for side in 0..2 {
+                if let Some(top) = up.observation.levels[side].first() {
+                    let buy = side == 1;
+                    // A worse best price proves better levels absent. An improved
+                    // best price says nothing about previously consumed worse levels.
+                    self.levels.retain(|&(m, b, px), _| {
+                        m != up.market || b != buy || if buy { px >= top.px } else { px <= top.px }
+                    });
+                }
+            }
+        }
+        self.update_depth(up, limit);
     }
     // None is solely for replaying the original format-1 accounting model.
     pub(crate) fn update_depth(&mut self, up: &Update, limit: Option<usize>) {
@@ -151,9 +207,22 @@ pub fn prepare(
     now: u64,
     slippage: Decimal,
 ) -> Result<Order> {
+    prepare_model(e, input, book, u, cfg, now, slippage, 3)
+}
+pub fn prepare_model(
+    e: Edge,
+    input: Decimal,
+    book: &Book,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+    slippage: Decimal,
+    model: u32,
+) -> Result<Order> {
     ensure!(input > Decimal::ZERO, "no_balance");
-    let depth = book.depth(now, cfg)?;
-    let rows = &depth.levels[usize::from(e.buy)];
+    let view = book.execution_side(e.buy, now, cfg, None, model)?;
+    let rows = view.rows;
+    ensure!(!rows.is_empty(), "no_liquidity");
     let dp = u.tokens[&u.markets[e.market].base].sz_decimals;
     let mut budget = input;
     let mut qty = Decimal::ZERO;
@@ -189,6 +258,10 @@ pub fn prepare(
         qty = qty.min(div(input, limit)?);
     }
     qty = floor(qty, dp);
+    ensure!(
+        view.scope != "top" || qty <= rows[0].sz,
+        "insufficient_top_depth"
+    );
     ensure!(qty > Decimal::ZERO, "below_lot");
     ensure!(mul(qty, limit)? >= Decimal::from(10), "minimum_notional");
     Ok(Order {
@@ -196,6 +269,7 @@ pub fn prepare(
         qty,
         limit,
         budget: input,
+        source: source(&view, e, u, now, model),
     })
 }
 pub fn execute(
@@ -204,24 +278,36 @@ pub fn execute(
     u: &Universe,
     cfg: &Config,
     now: u64,
-    mut shadow: Option<&mut Shadow>,
+    shadow: Option<&mut Shadow>,
 ) -> Result<Fill> {
-    if book.known_empty(order.edge.buy, now, cfg) {
+    execute_model(order, book, u, cfg, now, shadow, 3)
+}
+pub fn execute_model(
+    order: &Order,
+    book: &Book,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+    mut shadow: Option<&mut Shadow>,
+    model: u32,
+) -> Result<Fill> {
+    if model < 4 && book.known_empty(order.edge.buy, now, cfg) {
         return Ok(Fill {
             fee_token: order.edge.to(u),
             ..Fill::default()
         });
     }
-    let depth = book.depth(now, cfg)?;
+    let view = book.execution_side(order.edge.buy, now, cfg, Some(order.limit), model)?;
     let e = order.edge;
     let m = &u.markets[e.market];
     let dp = u.tokens[&m.base].sz_decimals;
     let mut fill = Fill {
         fee_token: e.to(u),
+        source: source(&view, e, u, now, model),
         ..Fill::default()
     };
     let mut debits = Vec::new();
-    for l in &depth.levels[usize::from(e.buy)] {
+    for l in view.rows {
         if (e.buy && l.px > order.limit) || (!e.buy && l.px < order.limit) {
             break;
         }
@@ -238,6 +324,21 @@ pub fn execute(
         if fill.qty == order.qty {
             break;
         }
+    }
+    // A truncated view cannot establish the fill of the unseen remainder.
+    // Do not consume shadow capacity or book hypothetical proceeds on this path.
+    if model >= 4 && fill.qty < order.qty {
+        let truncated = view.scope == "top"
+            || (view.scope == "l2" && view.rows.len() >= if cfg.l2_fast { 5 } else { 20 });
+        ensure!(
+            !truncated
+                || !view.rows.last().is_some_and(|l| if e.buy {
+                    l.px < order.limit
+                } else {
+                    l.px > order.limit
+                }),
+            "unknown_deeper_liquidity"
+        );
     }
     ensure!(fill.spent <= order.budget, "paper_budget_exceeded");
     fill.fee = mul(fill.gross, m.fee)?.round_dp_with_strategy(
@@ -273,6 +374,8 @@ pub struct Estimate {
     pub fees: Vec<(u32, Decimal)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inventory: Option<InventoryMark>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_sources: Option<Vec<ExecutionSource>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -341,16 +444,40 @@ pub fn estimate(
     cfg: &Config,
     now: u64,
 ) -> Result<Estimate> {
+    estimate_model(route, start, books, u, cfg, now, 3)
+}
+pub fn estimate_model(
+    route: &Route,
+    start: Decimal,
+    books: &[Book],
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+    model: u32,
+) -> Result<Estimate> {
     let edges = route.funded_edges(u).context("not_usdc_funded")?;
     let mut balances = Balances::from([(u.usdc, start)]);
     let mut fees = Vec::new();
     let mut input = start;
+    let mut sources = Vec::new();
     for e in edges {
-        let order = prepare(e, input, &books[e.market], u, cfg, now, cfg.slippage_bps)?;
-        let f = execute(&order, &books[e.market], u, cfg, now, None)?;
+        let order = prepare_model(
+            e,
+            input,
+            &books[e.market],
+            u,
+            cfg,
+            now,
+            cfg.slippage_bps,
+            model,
+        )?;
+        let f = execute_model(&order, &books[e.market], u, cfg, now, None, model)?;
         ensure!(f.qty == order.qty, "insufficient_depth");
         apply_fill(&mut balances, e, &f, u)?;
         fees.push((f.fee_token, f.fee));
+        if let Some(s) = f.source {
+            sources.push(s);
+        }
         input = f.received;
     }
     let final_usdc = amount(&balances, u.usdc);
@@ -365,5 +492,6 @@ pub fn estimate(
         residual: balances,
         fees,
         inventory: None,
+        execution_sources: (model >= 4).then_some(sources),
     })
 }
