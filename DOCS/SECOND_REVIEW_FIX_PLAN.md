@@ -1,6 +1,6 @@
 # Second review: checked findings and minimal fix plan
 
-**Implemented and validated on 28 September 2026.** That release introduced format-3 recovery, the 10-USDC paper residual policy, one-shot deadlines and diagnostic replay. This audit preserves its historical reasoning, including then-unfixed issues. Later paper format 4 and live accounting version 2 are covered by [VALIDATION.md](VALIDATION.md) and the current [README](../README.md).
+**Implemented and validated on 28 September 2026.** That release introduced format-3 recovery, the 10-USDC paper residual policy, one-shot deadlines and diagnostic replay. This audit preserves its historical reasoning, including then-unfixed issues. Later paper formats 4–5 and live accounting version 2 are covered by [VALIDATION.md](VALIDATION.md) and the current [README](../README.md); model 5 supersedes the value-based dust and permanent-pause rules in this plan.
 
 28 September 2026. Scope: audit and plan, following the user's request to avoid code bloat. The already-approved fast-feed deployment remains running. This review did not change production source, configuration, account state, or container settings. Diagnostics ran in disposable Docker containers; evidence is preserved under `review/2026-09-28-external-audit/`.
 

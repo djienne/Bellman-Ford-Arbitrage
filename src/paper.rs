@@ -778,6 +778,7 @@ impl Account {
         self.log(out,"attempt_ended",now,json!({"route":a.route,"status":if s.recovery {"recovery_completed"} else if s.forward_complete {"completed"} else {"cleaned"},"duration_ns":now.saturating_sub(a.started_ns),"cash_change_usdc":cash,"recovery_proceeds_usdc":if s.recovery {cash} else {Decimal::ZERO},"adjusted_closed_profit_usdc":if s.recovery {None} else {Some(cash-debit)},"opening_inventory_debit":debit,"included_in_performance":!s.recovery,"holdings":a.holdings,"balances":self.balances,"inventory":mark,"paused":self.paused}));
     }
 
+    /// Legacy model-3/4 dust policy; model 5 uses automatic confirmed cleanup.
     pub fn check_dust(
         &mut self,
         books: &[Book],

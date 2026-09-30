@@ -38,7 +38,7 @@ impl Default for Config {
             amounts_usdc: [25, 100, 250, 1000].map(Decimal::from).to_vec(),
             latency_ms: vec![100, 250, 500],
             min_profit_bps: Decimal::from(5),
-            // Legacy manifests omit this setting. New deployments opt in explicitly.
+            // Formats 3–4 use this value-based dust policy; model 5 uses sub-lots.
             dust_limit_usdc: Decimal::ZERO,
             taker_fee_bps: Decimal::from(7),
             fee_overrides_bps: BTreeMap::new(),

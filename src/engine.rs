@@ -494,35 +494,31 @@ impl Engine {
                     let forced = self.diagnostic.as_ref().is_some_and(|d| {
                         d.route == r.id && self.now >= d.after_ns && !a.tried.contains_key(&r.id)
                     });
-                    if !forced && (self.diagnostic.is_some() || s.net_bps.is_none_or(|v| v <= 0.0))
+                    if !forced && (self.diagnostic.is_some() || !s.net_bps.is_some_and(|v| v > 0.0))
                     {
                         continue;
                     }
-                    let amounts = self
-                        .diagnostic
-                        .as_ref()
-                        .filter(|_| forced)
-                        .map(|d| vec![d.amount])
-                        .unwrap_or_else(|| self.config.amounts_usdc.clone());
+                    let amounts = self.diagnostic.as_ref().map_or(
+                        self.config.amounts_usdc.as_slice(),
+                        |d| std::slice::from_ref(&d.amount),
+                    );
                     let mut plans = Vec::new();
-                    if forced || (self.diagnostic.is_none() && s.net_bps.is_some_and(|v| v > 0.0)) {
-                        for start in amounts {
-                            if start > quantity::amount(&a.balances, self.universe.usdc) {
-                                continue;
-                            }
-                            if let Ok(p) = quantity::pooled_plan(
-                                r,
-                                start,
-                                &a.balances,
-                                &self.books,
-                                &self.universe,
-                                &self.config,
-                                self.now,
-                                Some(&a.shadow),
-                            ) {
-                                if forced || p.estimate.bps > self.config.min_profit_bps {
-                                    plans.push(p);
-                                }
+                    for &start in amounts {
+                        if start > quantity::amount(&a.balances, self.universe.usdc) {
+                            continue;
+                        }
+                        if let Ok(p) = quantity::pooled_plan(
+                            r,
+                            start,
+                            &a.balances,
+                            &self.books,
+                            &self.universe,
+                            &self.config,
+                            self.now,
+                            Some(&a.shadow),
+                        ) {
+                            if forced || p.estimate.bps > self.config.min_profit_bps {
+                                plans.push(p);
                             }
                         }
                     }
@@ -554,8 +550,7 @@ impl Engine {
                         .then(ra.id.cmp(&rb.id))
                         .then(a.estimate.start.cmp(&b.estimate.start))
                 });
-                if !choices.is_empty() {
-                    let (r, epoch, p) = choices.remove(0);
+                if let Some((r, epoch, p)) = choices.into_iter().next() {
                     a.start_plan(
                         r,
                         epoch,

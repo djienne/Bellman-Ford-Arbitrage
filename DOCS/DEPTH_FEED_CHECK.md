@@ -34,6 +34,8 @@ The application was subsequently changed to request `fast: true` explicitly and 
 
 The minimal diagnostic is `examples/depth_probe.rs`, using existing dependencies. Its interval/window self-check passed in release mode. A separate calculation from the saved raw frames reproduced both snapshot counts and both median receipt intervals exactly.
 
+The optional `--tokyo-calibration` mode now records fast-only RTT and cadence; its bounded command and measurement limits are in the [current operations guide](../README.md#operations).
+
 ```powershell
 docker compose --profile tools run --rm check cargo test --release --locked --example depth_probe
 # OUTPUT_DIRECTORY must not already exist. RUN_DIRECTORY is the concurrent screener's run.

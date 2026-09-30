@@ -270,7 +270,7 @@ fn prepare_minimum(
         !e.buy || budget <= mul(Decimal::new(1, dp), marginal)?,
         "insufficient_depth"
     );
-    // Never silently size down a sell to observed depth: IOC must expose partial execution.
+    // Forward sells retain their intended quantity; cleanup chunks are prepared separately.
     if !e.buy {
         qty = input;
     }
@@ -598,7 +598,7 @@ pub struct InventoryMark {
     pub marks: Vec<serde_json::Value>,
 }
 /// Indicative bid marks and legacy paper lot/minimum-notional dust classification.
-/// Unknown marks cannot establish eligibility; live version 2 checks sub-lots separately.
+/// Paper model 5 and live version 2 apply their sub-lot classification separately.
 pub fn mark_inventory(
     balances: &Balances,
     books: &[Book],

@@ -1,6 +1,6 @@
 # Hyperliquid arbitrage prototype: detailed fix plan
 
-Prepared 28 September 2026. Historical planning rationale, retained as review evidence. Later approvals added the optimized hot path, paper formats 3–4 and optional bounded real execution. [PRD.md](PRD.md), [README.md](../README.md), and [VALIDATION.md](VALIDATION.md) supersede this plan's original scope, proposed file layout and rollout order.
+Prepared 28 September 2026. Historical planning rationale, retained as review evidence. Later approvals added the optimized hot path, paper formats 3–5 and optional bounded real execution. [PRD.md](PRD.md), [README.md](../README.md), and [VALIDATION.md](VALIDATION.md) supersede this plan's original scope, proposed file layout and rollout order.
 
 **Confirmed scope: Hyperliquid spot conversion cycles, with public recording and replay before trading.** The user selected spot conversion cycles. A perpetual position is not a conversion into the underlying token; the existing perpetual discovery and execution adapters will not be used as spot conversion logic.
 

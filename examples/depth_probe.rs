@@ -1,5 +1,5 @@
 //! Independent public-feed diagnostic; does not call the screener's collector or engine.
-//! docker compose run --rm check cargo run --release --locked --example depth_probe -- RUN_DIR OUTPUT_DIR SECONDS_PER_MODE
+//! `docker compose run --rm check cargo run --release --locked --example depth_probe -- RUN_DIR OUTPUT_DIR SECONDS_PER_MODE [--tokyo-calibration]`
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
