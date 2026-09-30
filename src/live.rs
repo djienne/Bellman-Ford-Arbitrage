@@ -42,6 +42,8 @@ struct Sent {
     expires_ms: u64,
     order: Order,
     alo: bool,
+    #[serde(default)]
+    purpose: wire::Purpose,
     submitted_ns: u64,
     #[serde(default)]
     clock_id: Option<u64>,
@@ -59,6 +61,12 @@ struct Attempt {
     done: Vec<Edge>,
     remaining: Vec<Edge>,
     unwind: bool,
+    #[serde(default)]
+    order_start: usize,
+    #[serde(default)]
+    cleanup_counts: BTreeMap<u32, u32>,
+    #[serde(default)]
+    cleanup_until_ms: Option<u64>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct State {
@@ -71,6 +79,8 @@ struct State {
     universe: Universe,
     config: Config,
     baseline: Balances,
+    #[serde(default)]
+    baseline_value: Option<Decimal>,
     balances: Balances,
     orders: Vec<Sent>,
     attempt: Option<Attempt>,
@@ -155,6 +165,11 @@ impl State {
         let mut attempt = self.attempt.clone();
         if let Some(a) = &mut attempt {
             a.holdings = remap_balance(&a.holdings)?;
+            a.cleanup_counts = a
+                .cleanup_counts
+                .iter()
+                .map(|(t, n)| Ok((*tokens.get(t).context("cleanup token removed")?, *n)))
+                .collect::<Result<_>>()?;
             for e in a.done.iter_mut().chain(&mut a.remaining) {
                 edge(e)?;
             }
@@ -182,10 +197,12 @@ struct Evidence {
     clock_id: u64,
     cpu_start: Option<u64>,
     started_ns: u64,
+    failed: bool,
 }
 impl Evidence {
     fn open(dir: PathBuf, clock: Arc<Clock>) -> Result<Self> {
         Ok(Self {
+            failed: false,
             clock_id: hyperliquid::utc_ns(),
             cpu_start: cpu_usage(),
             started_ns: clock.ns(),
@@ -202,18 +219,31 @@ impl Evidence {
         let start = self.clock.ns();
         // Docker Desktop bind mounts make many tiny writes expensive. Encode
         // once and issue one write before the durability barrier.
-        let mut bytes=serde_json::to_vec(&json!({"type":kind,"clock_id":self.clock_id,"receipt_utc_ns":hyperliquid::utc_ns(),"at_ns":start,"data":data}))?;
+        let mut bytes = serde_json::to_vec(
+            &json!({"type":kind,"clock_id":self.clock_id,"receipt_utc_ns":hyperliquid::utc_ns(),"at_ns":start,"data":data}),
+        )?;
         bytes.push(b'\n');
-        self.file.write_all(&bytes)?;
-        if durable {
-            self.file.sync_all()?;
+        let result = self.file.write_all(&bytes).and_then(|_| {
+            if durable {
+                self.file.sync_all()
+            } else {
+                Ok(())
+            }
+        });
+        if result.is_err() {
+            self.failed = true;
         }
+        result?;
         self.writes.record(self.clock.ns() - start);
         Ok(())
     }
     fn save(&mut self, state: &State, kind: &str) -> Result<()> {
         self.event(kind, serde_json::to_value(state)?, true)?;
-        journal::write_json(&self.dir.join("state.json"), state)
+        let result = journal::write_json(&self.dir.join("state.json"), state);
+        if result.is_err() {
+            self.failed = true;
+        }
+        result
     }
 }
 #[derive(Default)]
@@ -259,7 +289,7 @@ impl Market {
             paper_epoch: None,
             predecessor_run_id: None,
         };
-        let run_id=manifest.run_id.clone();
+        let run_id = manifest.run_id.clone();
         let journal = Journal::open(&dir.join("market"), manifest)?;
         let engine = Arc::new(Mutex::new(engine));
         let account = Arc::new(Mutex::new(AccountStream::default()));
@@ -399,7 +429,7 @@ impl Market {
             let mut events = e.step(&input)?;
             let completed_ns = clock.ns();
             e.complete_step(&input, completed_ns, &mut events)?;
-            events.push(journal::checkpoint(&run_id,&e));
+            events.push(journal::checkpoint(&run_id, &e));
             journal.record(Record {
                 input,
                 completed_ns,
@@ -407,7 +437,7 @@ impl Market {
             })?;
             let mut report = e.report();
             report["recording_complete"] = err.is_none().into();
-            report["recovery"]=journal::checkpoint(&run_id,&e);
+            report["recovery"] = journal::checkpoint(&run_id, &e);
             journal.finish(report)?;
             if let Some(error) = err {
                 bail!("{error}");
@@ -450,9 +480,14 @@ fn cpu() -> String {
         .trim()
         .into()
 }
-fn cpu_usage()->Option<u64> {
-    std::fs::read_to_string("/sys/fs/cgroup/cpu.stat").ok()?.lines()
-        .find_map(|line|line.strip_prefix("usage_usec ").and_then(|s|s.parse().ok()))
+fn cpu_usage() -> Option<u64> {
+    std::fs::read_to_string("/sys/fs/cgroup/cpu.stat")
+        .ok()?
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("usage_usec ")
+                .and_then(|s| s.parse().ok())
+        })
 }
 fn proof() -> Result<Value> {
     let v: Value = serde_json::from_reader(
@@ -469,8 +504,10 @@ fn proof() -> Result<Value> {
     Ok(v)
 }
 fn terminal(reply: &Value) -> Option<(&str, Decimal, Option<u64>)> {
-    let rows=reply.pointer("/response/data/statuses")?.as_array()?;
-    let [status]=rows.as_slice() else {return None;};
+    let rows = reply.pointer("/response/data/statuses")?.as_array()?;
+    let [status] = rows.as_slice() else {
+        return None;
+    };
     if status["error"].as_str().is_some() {
         return Some(("rejected", Decimal::ZERO, None));
     }
@@ -506,6 +543,54 @@ struct Runner {
     entry_deadline: Instant,
 }
 impl Runner {
+    fn owned(&self) -> Balances {
+        strategy_inventory(
+            &self.state.balances,
+            &self.state.allowed,
+            &self.state.universe,
+        )
+    }
+    fn mark(&self, balances: &Balances, e: &Engine) -> quantity::InventoryMark {
+        let mut m = inventory(balances, &self.state.allowed, e);
+        if self.state.format >= 2 {
+            m.all_dust = m.indicative_usdc.is_some();
+            for row in &mut m.marks {
+                let token = row["token"].as_u64().unwrap() as u32;
+                let lot = Decimal::new(1, e.universe.tokens[&token].sz_decimals);
+                let qty = quantity::amount(balances, token);
+                let sub_lot = qty < lot;
+                row["lot_size"] = lot.to_string().into();
+                row["classification"] = if sub_lot {
+                    "sub_lot_residual"
+                } else {
+                    "whole_lot_exposure"
+                }
+                .into();
+                row["untradeable_dust"] = sub_lot.into();
+                m.all_dust &= sub_lot;
+            }
+        }
+        m
+    }
+    fn equity(&self, e: &Engine) -> Result<Decimal> {
+        Ok(quantity::amount(&self.state.balances, e.universe.usdc)
+            + self
+                .mark(&self.owned(), e)
+                .indicative_usdc
+                .context("missing residual marks")?)
+    }
+    fn baseline_value(&self) -> Result<Decimal> {
+        if self.state.format < 2 {
+            Ok(quantity::amount(
+                &self.state.baseline,
+                self.state.universe.usdc,
+            ))
+        } else {
+            self.state
+                .baseline_value
+                .context("missing opening equity baseline")
+        }
+    }
     fn nonce(&mut self) -> Result<u64> {
         let path = Path::new(ROOT).join(format!("nonce-{}.json", self.state.signer));
         let previous = if path.exists() {
@@ -573,14 +658,14 @@ impl Runner {
         );
         self.check_account().await?;
         let e = self.market.engine.lock().await;
-        let mark = inventory(&self.state.balances, &self.state.allowed, &e);
+        let mark = self.mark(&self.owned(), &e);
         let inventory = mark.indicative_usdc.context("missing residual marks")?;
         ensure!(
-            mark.all_dust && inventory <= Decimal::from(5),
+            mark.all_dust && (self.state.format >= 2 || inventory <= Decimal::from(5)),
             "material/accumulated residual exposure"
         );
         let change = quantity::amount(&self.state.balances, e.universe.usdc) + inventory
-            - quantity::amount(&self.state.baseline, e.universe.usdc);
+            - self.baseline_value()?;
         ensure!(
             change > -self.state.limits.loss,
             "session loss stop reached"
@@ -628,7 +713,42 @@ impl Runner {
         }
     }
     async fn submit(&mut self, order: Order, alo: bool, discard_reply: bool) -> Result<usize> {
+        self.submit_for(
+            order,
+            if alo {
+                wire::Purpose::PostOnly
+            } else {
+                wire::Purpose::Ioc
+            },
+            discard_reply,
+        )
+        .await
+    }
+    async fn submit_for(
+        &mut self,
+        order: Order,
+        purpose: wire::Purpose,
+        discard_reply: bool,
+    ) -> Result<usize> {
         self.market.healthy().await?;
+        ensure!(
+            !self.log.failed,
+            "live journal failed; inventory submissions disabled"
+        );
+        ensure!(
+            self.state.orders.iter().all(|o| o.applied),
+            "pending order blocks another submission"
+        );
+        let available = self
+            .state
+            .attempt
+            .as_ref()
+            .map(|a| &a.holdings)
+            .unwrap_or(&self.state.balances);
+        ensure!(
+            order.budget <= quantity::amount(available, order.edge.from(&self.state.universe)),
+            "order exceeds confirmed allocation"
+        );
         ensure!(
             self.state.actions < self.state.limits.max_actions,
             "signed action cap reached"
@@ -639,13 +759,14 @@ impl Runner {
         );
         let nonce = self.nonce()?;
         let cloid = format!("0x{:016x}{:016x}", self.state.created_ms, nonce);
-        let action = wire::order_action(&order, &self.state.universe, &cloid, alo)?;
+        let action = wire::order_action_for(&order, &self.state.universe, &cloid, purpose)?;
         let entry = Sent {
             cloid,
             nonce,
             expires_ms: nonce + wire::TTL_MS,
             order,
-            alo,
+            alo: purpose == wire::Purpose::PostOnly,
+            purpose,
             submitted_ns: self.log.clock.ns(),
             clock_id: Some(self.log.clock_id),
             response: None,
@@ -757,6 +878,11 @@ impl Runner {
                     .event("order_status", json!({"cloid":o.cloid,"response":v}), false)?;
             }
             let observed = reply.as_ref().and_then(status);
+            if !o.alo && observed.is_some_and(|(label,_,_)|label=="open") {
+                // IOC/frontend cleanup must not leave an unexpected resting order.
+                self.cancel(i).await?;
+                continue;
+            }
             let end = known
                 .or_else(|| observed.filter(|(s, _, _)| !["open", "unknownOid"].contains(s)))
                 .or_else(|| {
@@ -863,8 +989,9 @@ impl Runner {
                         o.applied = true;
                         o.terminal = Some(label);
                         o.full = total == o.order.qty;
-                        if o.clock_id==Some(self.log.clock_id) {
-                            self.confirmations.record(self.log.clock.ns()-o.submitted_ns);
+                        if o.clock_id == Some(self.log.clock_id) {
+                            self.confirmations
+                                .record(self.log.clock.ns() - o.submitted_ns);
                         }
                         let full = o.full;
                         self.log.save(&self.state, "confirmed_order_and_balances")?;
@@ -882,7 +1009,251 @@ impl Runner {
             self.state.orders[i].cloid
         )
     }
+    async fn establish_baseline(&mut self) -> Result<()> {
+        if self.state.format < 2 || self.state.baseline_value.is_some() {
+            return Ok(());
+        }
+        let until = Instant::now() + Duration::from_secs(30);
+        loop {
+            let e = self.market.engine.lock().await;
+            if let Ok(value) = self.equity(&e) {
+                let mark = self.mark(&self.owned(), &e);
+                ensure!(
+                    mark.all_dust,
+                    "opening whole-lot inventory requires explicit reconciliation"
+                );
+                self.state.baseline_value = Some(value);
+                self.log.event(
+                    "opening_inventory_marks",
+                    json!({"equity_usdc":value,"inventory":mark}),
+                    true,
+                )?;
+                return self.log.save(&self.state, "opening_equity_recorded");
+            }
+            drop(e);
+            tokio::time::timeout_at(until.into(), self.market.changed.notified())
+                .await
+                .context("opening marks unavailable")?;
+        }
+    }
+    async fn cleanup_residuals(&mut self) -> Result<()> {
+        ensure!(!self.log.failed, "journal failure blocks cleanup orders");
+        ensure!(
+            self.state.orders.iter().all(|o| o.applied),
+            "unresolved order blocks cleanup"
+        );
+        self.check_account().await?;
+        if self.state.attempt.is_none() {
+            return Ok(());
+        }
+        let a = self.state.attempt.as_mut().unwrap();
+        a.unwind = true;
+        let end = *a.cleanup_until_ms.get_or_insert_with(|| utc_ms() + 120_000);
+        ensure!(utc_ms() < end, "cleanup deadline expired");
+        self.cleanup_deadline = Some(Instant::now() + Duration::from_millis(end - utc_ms()));
+        self.log.save(&self.state, "residual_cleanup_started")?;
+        loop {
+            let token = {
+                let e = self.market.engine.lock().await;
+                let holdings = &self.state.attempt.as_ref().unwrap().holdings;
+                let mark = self.mark(holdings, &e);
+                mark.indicative_usdc.context("missing cleanup marks")?;
+                let mut rows: Vec<_> = mark
+                    .marks
+                    .iter()
+                    .filter(|v| v["classification"] == "whole_lot_exposure")
+                    .map(|v| {
+                        Ok((
+                            v["token"].as_u64().context("cleanup token")? as u32,
+                            dec(v["indicative_usdc"].as_str().context("cleanup value")?)?,
+                        ))
+                    })
+                    .collect::<Result<_>>()?;
+                rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+                rows.first().map(|r| r.0)
+            };
+            let Some(token) = token else {
+                break;
+            };
+            ensure!(
+                self.state
+                    .attempt
+                    .as_ref()
+                    .unwrap()
+                    .cleanup_counts
+                    .get(&token)
+                    .copied()
+                    .unwrap_or(0)
+                    < 2,
+                "cleanup attempts exhausted for token {token}"
+            );
+            let market = self
+                .state
+                .universe
+                .markets
+                .iter()
+                .position(|m| m.base == token && m.quote == self.state.universe.usdc)
+                .context("no authorized direct USDC cleanup market")?;
+            let edge = Edge { market, buy: false };
+            let order = loop {
+                ensure!(utc_ms() < end, "cleanup deadline expired");
+                self.market.healthy().await?;
+                let e = self.market.engine.lock().await;
+                let qty = quantity::amount(&self.state.attempt.as_ref().unwrap().holdings, token);
+                let prepared = quantity::prepare_residual(
+                    edge,
+                    qty,
+                    &e.books[market],
+                    &e.universe,
+                    &e.config,
+                    e.now,
+                );
+                drop(e);
+                if let Ok(order) = prepared {
+                    break order;
+                }
+                tokio::time::timeout_at(
+                    self.cleanup_deadline.unwrap().into(),
+                    self.market.changed.notified(),
+                )
+                .await
+                .context("cleanup book unavailable")?;
+            };
+            *self
+                .state
+                .attempt
+                .as_mut()
+                .unwrap()
+                .cleanup_counts
+                .entry(token)
+                .or_default() += 1;
+            let i = self
+                .submit_for(order, wire::Purpose::Residual, false)
+                .await?;
+            self.resolve(i).await?;
+        }
+        self.cleanup_deadline = None;
+        self.check_account().await
+    }
+    async fn cycle_refined(
+        &mut self,
+        route: Route,
+        discard: bool,
+        interrupt: bool,
+        retain_lot: bool,
+    ) -> Result<bool> {
+        self.entry_guard(route.edges.len()).await?;
+        let until = Instant::now() + Duration::from_secs(30);
+        let plan = loop {
+            let e = self.market.engine.lock().await;
+            let plan = quantity::live_plan(
+                &route,
+                self.state.limits.amount,
+                &self.owned(),
+                &e.books,
+                &e.universe,
+                &e.config,
+                e.now,
+            );
+            drop(e);
+            if let Ok(plan) = plan {
+                break plan;
+            }
+            tokio::time::timeout_at(until.into(), self.market.changed.notified())
+                .await
+                .context("route lacks executable lot-aware plan")?;
+        };
+        {
+            let e = self.market.engine.lock().await;
+            ensure!(
+                self.equity(&e)? - self.baseline_value()? + plan.estimate.profit
+                    > -self.state.limits.loss,
+                "estimated loss exceeds test budget"
+            );
+            if self.state.phase == "live_run" && plan.estimate.bps <= e.config.min_profit_bps {
+                return Ok(false);
+            }
+        }
+        if !interrupt {
+            let count = self
+                .state
+                .route_attempts
+                .entry(route.id.clone())
+                .or_default();
+            ensure!(
+                self.state.phase == "live_run" || *count < 2,
+                "triangle attempt limit reached"
+            );
+            *count += 1;
+        }
+        self.log.event("entry_plan",json!({"route":route.id,"plan":plan,"diagnostic":self.state.phase!="live_run","controlled_cleanup":retain_lot}),true)?;
+        self.state.attempt = Some(Attempt {
+            route: route.id,
+            holdings: plan.opening.clone(),
+            done: vec![],
+            remaining: plan.orders.iter().map(|o| o.edge).collect(),
+            unwind: false,
+            order_start: self.state.orders.len(),
+            cleanup_counts: BTreeMap::new(),
+            cleanup_until_ms: None,
+        });
+        self.log.save(&self.state, "opening_allocation_reserved")?;
+        for (n, planned) in plan.orders.iter().enumerate() {
+            ensure!(
+                Instant::now() < self.entry_deadline,
+                "entry deadline reached during forward route"
+            );
+            self.market.healthy().await?;
+            let order = {
+                let e = self.market.engine.lock().await;
+                let input = quantity::amount(
+                    &self.state.attempt.as_ref().unwrap().holdings,
+                    planned.edge.from(&e.universe),
+                );
+                prepare_planned(planned, input, &e)
+            };
+            let mut order = match order {
+                Ok(o) => o,
+                Err(_) => {
+                    self.unwind().await?;
+                    return Ok(false);
+                }
+            };
+            if retain_lot && n + 1 == plan.orders.len() {
+                ensure!(
+                    !order.edge.buy && self.state.universe.markets[order.edge.market].index == 107,
+                    "controlled residual requires closing HYPE sell"
+                );
+                order.qty -= Decimal::new(
+                    1,
+                    self.state.universe.tokens[&order.edge.from(&self.state.universe)].sz_decimals,
+                );
+                ensure!(
+                    order.qty * order.limit >= Decimal::from(10),
+                    "controlled lot would make closing order too small"
+                );
+            }
+            let i = self.submit(order, false, discard && n == 0).await?;
+            if !self.resolve(i).await? {
+                self.unwind().await?;
+                return Ok(false);
+            }
+            if interrupt && n == 0 {
+                self.state.phase = "interrupted_validation".into();
+                self.log
+                    .save(&self.state, "controlled_stop_after_confirmed_first_leg")?;
+                return Ok(false);
+            }
+        }
+        self.cleanup_residuals().await?;
+        self.finish_attempt(true).await?;
+        Ok(true)
+    }
     async fn unwind(&mut self) -> Result<()> {
+        if self.state.format >= 2 {
+            self.cleanup_residuals().await?;
+            return self.finish_attempt(false).await;
+        }
         self.cleanup_deadline = Some(Instant::now() + Duration::from_secs(120));
         let Some(a) = &mut self.state.attempt else {
             return Ok(());
@@ -939,11 +1310,28 @@ impl Runner {
     }
     async fn finish_attempt(&mut self, completed: bool) -> Result<()> {
         let e = self.market.engine.lock().await;
-        let mark = inventory(&self.state.balances, &self.state.allowed, &e);
+        let mark = self.mark(&self.owned(), &e);
         ensure!(
-            mark.all_dust && mark.indicative_usdc.is_some_and(|v| v <= Decimal::from(5)),
+            mark.all_dust
+                && mark
+                    .indicative_usdc
+                    .is_some_and(|v| self.state.format >= 2 || v <= Decimal::from(5)),
             "retained material/unknown residual exposure"
         );
+        ensure!(
+            self.state.orders.iter().all(|o| o.applied),
+            "unresolved order at attempt completion"
+        );
+        if let Some(a) = &self.state.attempt {
+            let times: Vec<_> = self.state.orders[a.order_start..]
+                .iter()
+                .flat_map(|o| o.trades.iter().map(|f| f.exchange_ms))
+                .collect();
+            self.log.event("attempt_residuals",json!({"route":a.route,"completed":completed,"inventory":mark,
+                "first_fill_exchange_ms":times.iter().min(),"last_fill_exchange_ms":times.iter().max(),
+                "fill_to_final_fill_ms":times.iter().max().zip(times.iter().min()).map(|(last,first)|last-first),
+                "timing_scope":"exchange fill timestamps; residual sub-lot holdings remain"}),true)?;
+        }
         if completed {
             let route = self
                 .state
@@ -981,102 +1369,16 @@ impl Runner {
             done: vec![edge],
             remaining: vec![],
             unwind: true,
+            order_start: i,
+            cleanup_counts: BTreeMap::new(),
+            cleanup_until_ms: None,
         });
         self.log.save(&self.state, "unexpected_probe_fill")?;
         self.unwind().await?;
         bail!("probe filled unexpectedly; confirmed inventory cleaned up")
     }
     async fn cycle(&mut self, route: Route, discard: bool, interrupt: bool) -> Result<bool> {
-        self.entry_guard(route.edges.len()).await?;
-        let forward = route
-            .funded_edges(&self.state.universe)
-            .context("live route must close at USDC")?;
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let estimate = loop {
-            let e = self.market.engine.lock().await;
-            if let Ok(estimate) = quantity::estimate_model(
-                &route,
-                self.state.limits.amount,
-                &e.books,
-                &e.universe,
-                &e.config,
-                e.now,
-                4,
-            ) {
-                break estimate;
-            }
-            drop(e);
-            tokio::time::timeout_at(deadline.into(), self.market.changed.notified())
-                .await
-                .context("route lacks executable observations")?;
-        };
-        self.log.event(
-            "entry_estimate",
-            json!({"route":route.id,"estimate":estimate,"diagnostic":self.state.phase!="live_run"}),
-            true,
-        )?;
-        {
-            let e = self.market.engine.lock().await;
-            let mark = inventory(&self.state.balances, &self.state.allowed, &e);
-            let change = quantity::amount(&self.state.balances, e.universe.usdc)
-                + mark
-                    .indicative_usdc
-                    .context("missing entry inventory marks")?
-                - quantity::amount(&self.state.baseline, e.universe.usdc);
-            ensure!(
-                change + estimate.profit > -self.state.limits.loss,
-                "estimated cash loss exceeds remaining test budget"
-            );
-            if self.state.phase == "live_run" && estimate.bps <= e.config.min_profit_bps {
-                return Ok(false);
-            }
-        }
-        if !interrupt {
-            let count = self
-                .state
-                .route_attempts
-                .entry(route.id.clone())
-                .or_default();
-            ensure!(
-                self.state.phase == "live_run" || *count < 2,
-                "triangle attempt limit reached"
-            );
-            *count += 1;
-        }
-        self.state.attempt = Some(Attempt {
-            route: route.id,
-            holdings: Balances::from([(self.state.universe.usdc, self.state.limits.amount)]),
-            done: vec![],
-            remaining: forward.clone(),
-            unwind: false,
-        });
-        self.log.save(&self.state, "opening_allocation_reserved")?;
-        for (n, edge) in forward.into_iter().enumerate() {
-            let input = quantity::amount(
-                &self.state.attempt.as_ref().unwrap().holdings,
-                edge.from(&self.state.universe),
-            );
-            let order = match self.prepare(edge, input, false).await {
-                Ok(o) => o,
-                Err(_) => {
-                    self.unwind().await?;
-                    return Ok(false);
-                }
-            };
-            let i = self.submit(order, false, discard && n == 0).await?;
-            if !self.resolve(i).await? {
-                self.unwind().await?;
-                return Ok(false);
-            }
-            if interrupt && n == 0 {
-                self.state.phase = "interrupted_validation".into();
-                self.log
-                    .save(&self.state, "controlled_stop_after_confirmed_first_leg")?;
-                return Ok(false);
-            }
-        }
-        self.finish_attempt(true).await?;
-        Ok(true)
+        self.cycle_refined(route, discard, interrupt, false).await
     }
 }
 fn same_balances(a: &Balances, b: &Balances, u: &Universe) -> bool {
@@ -1086,6 +1388,48 @@ fn same_balances(a: &Balances, b: &Balances, u: &Universe) -> bool {
                 <= Decimal::new(1, token.wei_decimals)
         })
     })
+}
+fn strategy_inventory(b: &Balances, allowed: &[Route], u: &Universe) -> Balances {
+    let tokens: BTreeSet<_> = allowed
+        .iter()
+        .flat_map(|r| r.edges.iter().flat_map(|e| [e.from(u), e.to(u)]))
+        .collect();
+    b.iter()
+        .filter(|(t, q)| **t != u.usdc && **q > Decimal::ZERO && tokens.contains(t))
+        .map(|(t, q)| (*t, *q))
+        .collect()
+}
+fn prepare_planned(planned: &Order, input: Decimal, e: &Engine) -> Result<Order> {
+    let edge = planned.edge;
+    let budget = if edge.buy {
+        planned.qty * planned.limit
+    } else {
+        input
+    };
+    ensure!(
+        budget <= input,
+        "confirmed proceeds cannot fund planned quantity"
+    );
+    let mut order = quantity::prepare_model(
+        edge,
+        budget,
+        &e.books[edge.market],
+        &e.universe,
+        &e.config,
+        e.now,
+        e.config.slippage_bps,
+        4,
+    )?;
+    ensure!(
+        order.qty >= planned.qty,
+        "changed book cannot support planned quantity"
+    );
+    if edge.buy {
+        order.limit = order.limit.min(planned.limit);
+        order.qty = planned.qty;
+    }
+    order.budget = input;
+    Ok(order)
 }
 /// Dust is checked over authorized exits, plus direct-USDC marks. Dormant,
 /// unauthorized markets cannot consume this account's residual holdings.
@@ -1154,7 +1498,7 @@ pub async fn run(args: &[String]) -> Result<()> {
     );
     let mut at = 1;
     while at < args.len() {
-        if args[at] == "--allow-real-orders" {
+        if ["--allow-real-orders", "--residual-check"].contains(&args[at].as_str()) {
             at += 1;
             continue;
         }
@@ -1176,6 +1520,10 @@ pub async fn run(args: &[String]) -> Result<()> {
         );
         at += 2;
     }
+    ensure!(
+        !args.iter().any(|s| s == "--residual-check") || command == "validate",
+        "--residual-check requires live validate"
+    );
     let client = Client::load(Path::new(
         &value(args, "--credentials").unwrap_or_else(|| "/run/secrets/hyperliquid.env".into()),
     ))?;
@@ -1210,7 +1558,10 @@ pub async fn run(args: &[String]) -> Result<()> {
     let dir = Path::new(ROOT).join(&session);
     if command == "reconcile" {
         let state: State = serde_json::from_reader(File::open(dir.join("state.json"))?)?;
-        ensure!(state.format==1,"unsupported live accounting version");
+        ensure!(
+            [1, 2].contains(&state.format),
+            "unsupported live accounting version"
+        );
         ensure!(
             state.account == client.account && state.signer == client.signer,
             "session identity mismatch"
@@ -1265,7 +1616,10 @@ pub async fn run(args: &[String]) -> Result<()> {
     let clock = Arc::new(Clock::new());
     let state = if command == "cleanup" {
         let mut saved: State = serde_json::from_reader(File::open(dir.join("state.json"))?)?;
-        ensure!(saved.format==1,"unsupported live accounting version");
+        ensure!(
+            [1, 2].contains(&saved.format),
+            "unsupported live accounting version"
+        );
         ensure!(
             saved.account == client.account && saved.signer == client.signer,
             "cleanup session identity mismatch"
@@ -1352,7 +1706,7 @@ pub async fn run(args: &[String]) -> Result<()> {
             required.to_vec()
         };
         State {
-            format: 1,
+            format: 2,
             session: session.clone(),
             account: client.account.clone(),
             signer: client.signer.clone(),
@@ -1361,6 +1715,7 @@ pub async fn run(args: &[String]) -> Result<()> {
             universe: u.clone(),
             config: cfg.clone(),
             baseline: balances.clone(),
+            baseline_value: None,
             balances,
             orders: vec![],
             attempt: None,
@@ -1405,7 +1760,7 @@ pub async fn run(args: &[String]) -> Result<()> {
         entry_deadline,
     };
     let result = tokio::select! {result=execute(&mut runner,command,args,required)=>result,
-    _=shutdown()=>Err(anyhow::anyhow!("operator stopped live owner; reconcile pending orders before explicit cleanup"))};
+    _=shutdown()=>Err(anyhow::anyhow!("operator stopped live owner; forward execution stopped"))};
     if let Err(error) = &result {
         runner.state.blocked = Some(format!("{error:#}"));
         let _ = runner.log.save(&runner.state, "live_session_blocked");
@@ -1416,11 +1771,32 @@ pub async fn run(args: &[String]) -> Result<()> {
                 }
             }
         }
+        if runner.state.format >= 2 && !runner.log.failed {
+            let cleanup = async {
+                runner.cleanup_deadline = Some(Instant::now() + Duration::from_secs(120));
+                for i in 0..runner.state.orders.len() {
+                    if !runner.state.orders[i].applied {
+                        runner.resolve(i).await?;
+                    }
+                }
+                runner.unwind().await
+            }
+            .await;
+            if let Err(error) = cleanup {
+                runner.state.blocked = Some(format!(
+                    "{}; cleanup: {error:#}",
+                    runner.state.blocked.as_deref().unwrap_or("failed")
+                ));
+            }
+            let _ = runner.log.save(&runner.state, "failure_cleanup_outcome");
+        }
     }
     let e = runner.market.engine.lock().await;
-    let mark = inventory(&runner.state.balances, &runner.state.allowed, &e);
+    let mark = runner.mark(&runner.owned(), &e);
     let report = json!({"diagnostic":command!="run","execution_performance_included":command=="run",
         "state":runner.state,"inventory":mark,"cash_change_usdc":quantity::amount(&runner.state.balances,e.universe.usdc)-quantity::amount(&runner.state.baseline,e.universe.usdc),
+        "inventory_adjusted_change_usdc":runner.equity(&e).ok().zip(runner.baseline_value().ok()).map(|(end,start)|end-start),
+        "unresolved_exposure":runner.state.attempt.is_some() || runner.state.orders.iter().any(|o|!o.applied),
         "receipt_to_decision":e.stats.receipt_to_decision.report(),"queue_age":e.stats.queue_age.report(),
         "submission_response":runner.responses.report(),"fill_and_balance_confirmation":runner.confirmations.report(),
         "durable_write":runner.log.writes.report(),"cpu_quota":cpu(),
@@ -1440,6 +1816,7 @@ async fn execute(
     args: &[String],
     required: [Route; 2],
 ) -> Result<()> {
+    r.establish_baseline().await?;
     if command == "cleanup" {
         r.cleanup_deadline = Some(Instant::now() + Duration::from_secs(120));
         for i in 0..r.state.orders.len() {
@@ -1480,28 +1857,44 @@ async fn execute(
                 "unknown route allowlist"
             );
         }
+        let mut eligible = BTreeMap::<String, (bool, u64)>::new();
         while Instant::now() < r.entry_deadline {
             let choice = {
                 let e = r.market.engine.lock().await;
                 let threshold = e.config.min_profit_bps;
-                let mut choices: Vec<_> = e
+                let mut choices = Vec::new();
+                for (route, s) in e
                     .routes
                     .iter()
                     .zip(&e.states)
-                    .filter(|(route, s)| {
-                        allow.contains(&route.id)
-                            && s.eligible
-                            && r.state.tried.get(&route.id) != Some(&s.entry_epoch)
-                    })
-                    .flat_map(|(route, s)| {
-                        s.sizes.iter().filter_map(move |q| {
-                            q.estimate
-                                .as_ref()
-                                .filter(|x| x.bps > threshold)
-                                .map(|x| (route.clone(), s.entry_epoch, x.profit))
-                        })
-                    })
-                    .collect();
+                    .filter(|(route, _)| allow.contains(&route.id))
+                {
+                    let plan = if e.connected && s.net_bps.is_some_and(|bps| bps > 0.0) {
+                        quantity::live_plan(
+                            route,
+                            r.state.limits.amount,
+                            &r.owned(),
+                            &e.books,
+                            &e.universe,
+                            &e.config,
+                            e.now,
+                        )
+                        .ok()
+                        .filter(|p| p.estimate.bps > threshold)
+                    } else {
+                        None
+                    };
+                    let state = eligible.entry(route.id.clone()).or_insert((false, 0));
+                    if plan.is_some() && !state.0 {
+                        state.1 += 1;
+                    }
+                    state.0 = plan.is_some();
+                    if let Some(p) = plan {
+                        if r.state.tried.get(&route.id) != Some(&state.1) {
+                            choices.push((route.clone(), state.1, p.estimate.profit));
+                        }
+                    }
+                }
                 choices.sort_by(|a, b| {
                     b.2.cmp(&a.2)
                         .then(a.0.edges.len().cmp(&b.0.edges.len()))
@@ -1519,6 +1912,32 @@ async fn execute(
         }
         r.state.phase = "finite_live_run_complete".into();
         return r.log.save(&r.state, "finite_run_complete");
+    }
+    if args.iter().any(|s| s == "--residual-check") {
+        for (n, route) in required.iter().enumerate() {
+            let mut passed = false;
+            for _ in 0..2 {
+                if r.cycle_refined(route.clone(), false, false, n == 1).await? {
+                    passed = true;
+                    break;
+                }
+            }
+            ensure!(
+                passed,
+                "residual validation triangle failed within two attempts"
+            );
+        }
+        ensure!(
+            r.state
+                .orders
+                .iter()
+                .any(|o| o.purpose == wire::Purpose::Residual
+                    && o.trades.iter().any(|f| f.qty * f.px < Decimal::from(10))),
+            "no confirmed sub-minimum cleanup fill"
+        );
+        r.check_account().await?;
+        r.state.phase = "residual_validation_complete".into();
+        return r.log.save(&r.state, "residual_validation_complete");
     }
     let first = required[0].funded_edges(&r.state.universe).unwrap()[0];
     r.entry_guard(1).await?;
@@ -1587,6 +2006,158 @@ async fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn priced_engine() -> Engine {
+        let s = fixture();
+        let mut e = Engine::scanner(s.config, s.universe).unwrap();
+        e.now = 1;
+        e.connected = true;
+        for (index, bid, ask) in [
+            (107, "86.429", "86.457"),
+            (207, "86.473", "86.50"),
+            (166, "0.99954", "0.9996"),
+            (150, "0.9998", "0.99989"),
+            (255, "86.40", "86.418"),
+        ] {
+            let i = e
+                .universe
+                .markets
+                .iter()
+                .position(|m| m.index == index)
+                .unwrap();
+            let raw = json!({"channel":"l2Book","data":{"coin":format!("@{index}"),"time":1,"levels":[[{"px":bid,"sz":"100000"}],[{"px":ask,"sz":"100000"}]]}}).to_string();
+            let update = crate::book::parse(&raw, &e.universe, 1, 1)
+                .unwrap()
+                .unwrap();
+            assert!(e.books[i].apply(&update));
+        }
+        e
+    }
+    #[test]
+    fn recorded_fills_pool_hype_and_backward_fund_usde() {
+        let e = priced_engine();
+        let r = routes(&e.universe, &e.config).unwrap();
+        let p = quantity::live_plan(
+            &r[1],
+            Decimal::from(50),
+            &Balances::new(),
+            &e.books,
+            &e.universe,
+            &e.config,
+            e.now,
+        )
+        .unwrap();
+        assert_eq!(p.orders[0].qty, dec("49.28").unwrap());
+        assert_eq!(p.orders[1].qty, dec("0.57").unwrap());
+        assert!(p.estimate.residual[&235] < dec("0.05").unwrap());
+        let mut balance = Decimal::ZERO;
+        let mut sold = vec![];
+        for _ in 0..3 {
+            balance += dec("0.57").unwrap() - dec("0.00039899").unwrap();
+            let q = quantity::floor(balance, 2);
+            sold.push(q);
+            balance -= q;
+        }
+        assert_eq!(
+            sold,
+            vec![
+                dec("0.56").unwrap(),
+                dec("0.57").unwrap(),
+                dec("0.57").unwrap()
+            ]
+        );
+        assert_eq!(balance, dec("0.00880303").unwrap());
+        // Actual received USDE fee differs by atomic rounding from the model.
+        assert_eq!(
+            dec("50").unwrap()
+                - dec("0.00699998").unwrap()
+                - dec("0.57").unwrap() * dec("86.418").unwrap(),
+            dec("0.73474002").unwrap()
+        );
+        assert_eq!(
+            dec("49.28").unwrap() * (Decimal::ONE - dec("0.00014").unwrap())
+                - dec("0.57").unwrap() * dec("86.418").unwrap(),
+            dec("0.0148408").unwrap()
+        );
+    }
+    #[test]
+    fn pooled_plan_does_not_count_old_inventory_as_profit_or_downsize_a_buy() {
+        let e = priced_engine();
+        let route = routes(&e.universe, &e.config).unwrap()[1].clone();
+        let carry = Balances::from([(150, dec("0.02880303").unwrap())]);
+        let p = quantity::live_plan(
+            &route,
+            Decimal::from(50),
+            &carry,
+            &e.books,
+            &e.universe,
+            &e.config,
+            e.now,
+        )
+        .unwrap();
+        assert_eq!(p.orders[2].qty, dec("0.59").unwrap());
+        assert!(p.opening_inventory_debit > Decimal::ONE);
+        assert_eq!(p.estimate.profit, p.cash_profit - p.opening_inventory_debit);
+        let mut future = priced_engine();
+        let i = p.orders[1].edge.market;
+        let raw=json!({"channel":"l2Book","data":{"coin":"@255","time":2,"levels":[[{"px":"89","sz":"1000"}],[{"px":"90","sz":"1000"}]]}}).to_string();
+        let up = crate::book::parse(&raw, &future.universe, 2, 2)
+            .unwrap()
+            .unwrap();
+        future.books[i].apply(&up);
+        future.now = 2;
+        assert!(prepare_planned(&p.orders[1], dec("49.28").unwrap(), &future).is_err());
+    }
+    #[test]
+    fn cleanup_sells_whole_lots_below_minimum_with_fixed_limit() {
+        let e = priced_engine();
+        let edge = Edge {
+            market: e
+                .universe
+                .markets
+                .iter()
+                .position(|m| m.index == 107)
+                .unwrap(),
+            buy: false,
+        };
+        let q = dec("0.02880303").unwrap();
+        let o = quantity::prepare_residual(
+            edge,
+            q,
+            &e.books[edge.market],
+            &e.universe,
+            &e.config,
+            e.now,
+        )
+        .unwrap();
+        assert_eq!(o.qty, dec("0.02").unwrap());
+        assert!(o.limit >= dec("86.429").unwrap() * dec("0.995").unwrap());
+        let cloid = "0x000102030405060708090a0b0c0d0e0f";
+        let wire = serde_json::to_value(
+            wire::order_action_for(&o, &e.universe, cloid, wire::Purpose::Residual).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(wire["orders"][0]["t"]["limit"]["tif"], "FrontendMarket");
+        assert_eq!(wire["orders"][0]["r"], false);
+        assert_eq!(wire["orders"][0]["p"], o.limit.normalize().to_string());
+        assert!(wire::order_action_for(&o, &e.universe, cloid, wire::Purpose::Ioc).is_err());
+        assert!(quantity::prepare_residual(
+            edge,
+            dec("0.00880303").unwrap(),
+            &e.books[edge.market],
+            &e.universe,
+            &e.config,
+            e.now
+        )
+        .is_err());
+        let mut less = o.clone();
+        less.qty = dec("0.01").unwrap();
+        assert!(
+            wire::order_action_for(&less, &e.universe, cloid, wire::Purpose::Residual).is_err()
+        );
+        let mut buy = o;
+        buy.edge.buy = true;
+        assert!(wire::order_action_for(&buy, &e.universe, cloid, wire::Purpose::Residual).is_err());
+    }
     fn fixture() -> State {
         let config = Config::default();
         let u = Universe::parse(
@@ -1596,7 +2167,7 @@ mod tests {
         )
         .unwrap();
         State {
-            format: 1,
+            format: 2,
             session: "test".into(),
             account: "account".into(),
             signer: "signer".into(),
@@ -1608,6 +2179,7 @@ mod tests {
                 max_actions: 32,
             },
             baseline: Balances::from([(u.usdc, Decimal::from(75))]),
+            baseline_value: Some(Decimal::from(75)),
             balances: Balances::from([(u.usdc, Decimal::from(25))]),
             orders: vec![],
             attempt: Some(Attempt {
@@ -1616,6 +2188,9 @@ mod tests {
                 done: vec![],
                 remaining: routes(&u, &config).unwrap()[0].funded_edges(&u).unwrap(),
                 unwind: false,
+                order_start: 0,
+                cleanup_counts: BTreeMap::new(),
+                cleanup_until_ms: None,
             }),
             allowed: routes(&u, &config).unwrap().to_vec(),
             universe: u,
@@ -1674,7 +2249,10 @@ mod tests {
     }
     #[test]
     fn terminal_status_keeps_unknown_distinct_from_zero_fill() {
-        assert!(terminal(&json!({"response":{"data":{"statuses":[{"error":"one"},{"error":"two"}]}}})).is_none());
+        assert!(terminal(
+            &json!({"response":{"data":{"statuses":[{"error":"one"},{"error":"two"}]}}})
+        )
+        .is_none());
         assert!(terminal(&json!({"transport_error":"lost"})).is_none());
         assert_eq!(
             terminal(&json!({"response":{"data":{"statuses":[{"error":"no immediate match"}]}}}))
@@ -1719,6 +2297,7 @@ mod tests {
     #[test]
     fn failed_durable_write_cannot_be_successful_intent() {
         let mut log = Evidence {
+            failed: false,
             dir: PathBuf::from("/tmp"),
             file: OpenOptions::new().write(true).open("/dev/full").unwrap(),
             clock: Arc::new(Clock::new()),
@@ -1728,6 +2307,7 @@ mod tests {
             started_ns: 0,
         };
         assert!(log.save(&fixture(), "intent").is_err());
+        assert!(log.failed);
     }
     async fn recovered_fill(partial: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1749,6 +2329,7 @@ mod tests {
             expires_ms: 2,
             order,
             alo: false,
+            purpose: wire::Purpose::Ioc,
             submitted_ns: 0,
             clock_id: None,
             response: None,
@@ -1834,7 +2415,10 @@ mod tests {
             entry_deadline: Instant::now() + Duration::from_secs(30),
         };
         assert_eq!(r.resolve(0).await.unwrap(), !partial);
-        assert_eq!(r.confirmations.count,0,"old clock domains must not fabricate zero confirmation latency");
+        assert_eq!(
+            r.confirmations.count, 0,
+            "old clock domains must not fabricate zero confirmation latency"
+        );
         assert_eq!(
             r.state.balances[&base],
             dec(if partial { "0.059958" } else { "0.119916" }).unwrap()
@@ -1846,6 +2430,37 @@ mod tests {
         assert_eq!(
             server.await.unwrap(),
             vec!["orderStatus", "userFillsByTime", "spotClearinghouseState"]
+        );
+        let mut e = priced_engine();
+        assert!(
+            !r.mark(&Balances::from([(base, dec("0.02880303").unwrap())]), &e)
+                .all_dust
+        );
+        assert!(
+            r.mark(&Balances::from([(base, dec("0.00880303").unwrap())]), &e)
+                .all_dust
+        );
+        r.state.baseline_value = Some(dec("75.75").unwrap());
+        r.state.balances = Balances::from([(0, Decimal::from(75))]);
+        assert_eq!(
+            r.equity(&e).unwrap() - r.baseline_value().unwrap(),
+            dec("-0.75").unwrap(),
+            "pre-existing inventory loss must not disappear from the baseline"
+        );
+        e.universe.tokens.get_mut(&base).unwrap().sz_decimals = 5;
+        assert!(
+            r.mark(&Balances::from([(base, dec("0.00000999").unwrap())]), &e)
+                .all_dust
+        );
+        assert!(
+            !r.mark(&Balances::from([(base, dec("0.00001001").unwrap())]), &e)
+                .all_dust
+        );
+        e.now = 2_000_000_000;
+        assert!(
+            !r.mark(&Balances::from([(base, dec("0.00000999").unwrap())]), &e)
+                .all_dust,
+            "missing marks cannot establish safe residuals"
         );
         drop(r);
         std::fs::remove_dir_all(dir).unwrap();

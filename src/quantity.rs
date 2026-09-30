@@ -219,6 +219,29 @@ pub fn prepare_model(
     slippage: Decimal,
     model: u32,
 ) -> Result<Order> {
+    prepare_minimum(
+        e,
+        input,
+        book,
+        u,
+        cfg,
+        now,
+        slippage,
+        model,
+        Decimal::from(10),
+    )
+}
+fn prepare_minimum(
+    e: Edge,
+    input: Decimal,
+    book: &Book,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+    slippage: Decimal,
+    model: u32,
+    minimum: Decimal,
+) -> Result<Order> {
     ensure!(input > Decimal::ZERO, "no_balance");
     let view = book.execution_side(e.buy, now, cfg, None, model)?;
     let rows = view.rows;
@@ -263,13 +286,178 @@ pub fn prepare_model(
         "insufficient_top_depth"
     );
     ensure!(qty > Decimal::ZERO, "below_lot");
-    ensure!(mul(qty, limit)? >= Decimal::from(10), "minimum_notional");
+    ensure!(mul(qty, limit)? >= minimum, "minimum_notional");
     Ok(Order {
         edge: e,
         qty,
         limit,
         budget: input,
         source: source(&view, e, u, now, model),
+    })
+}
+
+/// The observed frontend exception is restricted to selling confirmed spot
+/// inventory to USDC. Ordinary paper and live orders keep their minimum.
+#[cfg(feature = "live")]
+pub fn prepare_residual(
+    e: Edge,
+    input: Decimal,
+    book: &Book,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+) -> Result<Order> {
+    ensure!(!e.buy && e.to(u) == u.usdc, "cleanup must sell to USDC");
+    prepare_minimum(
+        e,
+        input,
+        book,
+        u,
+        cfg,
+        now,
+        cfg.unwind_slippage_bps,
+        4,
+        Decimal::ZERO,
+    )
+}
+
+#[cfg(feature = "live")]
+#[derive(Clone, Debug, Serialize)]
+pub struct LivePlan {
+    pub orders: Vec<Order>,
+    pub opening: Balances,
+    pub cash_profit: Decimal,
+    pub opening_inventory_debit: Decimal,
+    pub estimate: Estimate,
+}
+
+#[cfg(feature = "live")]
+fn buy_to_receive(net: Decimal, fee: Decimal, dp: u32, atomic_dp: u32) -> Result<Decimal> {
+    ensure!(
+        fee >= Decimal::ZERO && fee < Decimal::ONE,
+        "invalid received fee"
+    );
+    let mut qty = div(net, Decimal::ONE - fee)?
+        .round_dp_with_strategy(dp, RoundingStrategy::ToPositiveInfinity);
+    let charged =
+        mul(qty, fee)?.round_dp_with_strategy(atomic_dp, RoundingStrategy::ToPositiveInfinity);
+    if qty - charged < net {
+        qty += Decimal::new(1, dp);
+    }
+    Ok(qty)
+}
+
+/// Cold-path, fixed-book plan: keep the feasible downstream lots, then remove
+/// unnecessary intermediate purchases. No search over hypothetical extra trades.
+#[cfg(feature = "live")]
+pub fn live_plan(
+    route: &Route,
+    start: Decimal,
+    carry: &Balances,
+    books: &[Book],
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+) -> Result<LivePlan> {
+    let edges = route.funded_edges(u).context("not_usdc_funded")?;
+    let mut opening = carry.clone();
+    opening.insert(u.usdc, start);
+    let mut balances = opening.clone();
+    let mut orders = Vec::new();
+    for e in &edges {
+        let o = prepare_model(
+            *e,
+            amount(&balances, e.from(u)),
+            &books[e.market],
+            u,
+            cfg,
+            now,
+            cfg.slippage_bps,
+            4,
+        )?;
+        let f = execute_model(&o, &books[e.market], u, cfg, now, None, 4)?;
+        ensure!(f.qty == o.qty, "insufficient_depth");
+        apply_fill(&mut balances, *e, &f, u)?;
+        orders.push(o);
+    }
+    for i in (0..orders.len() - 1).rev() {
+        let e = orders[i].edge;
+        if !e.buy {
+            continue;
+        }
+        let next = &orders[i + 1];
+        let needed = if next.edge.buy {
+            mul(next.qty, next.limit)?
+        } else {
+            next.qty
+        };
+        let net = (needed - amount(carry, e.to(u))).max(Decimal::ZERO);
+        let token = &u.tokens[&e.to(u)];
+        let qty = buy_to_receive(
+            net,
+            u.markets[e.market].fee,
+            token.sz_decimals,
+            token.wei_decimals,
+        )?;
+        // A sale's conservative limit can demand more funding than its observed
+        // fill. Never increase the feasible forward allocation during trimming.
+        if qty > Decimal::ZERO && qty < orders[i].qty {
+            ensure!(
+                mul(qty, orders[i].limit)? >= Decimal::from(10),
+                "minimum_notional"
+            );
+            orders[i].qty = qty;
+        }
+    }
+    balances = opening.clone();
+    let mut fees = Vec::new();
+    let mut sources = Vec::new();
+    for o in &mut orders {
+        o.budget = amount(&balances, o.edge.from(u));
+        ensure!(
+            !o.edge.buy || mul(o.qty, o.limit)? <= o.budget,
+            "planned_funding_shortfall"
+        );
+        if !o.edge.buy {
+            o.qty = floor(o.budget, u.tokens[&o.edge.from(u)].sz_decimals);
+        }
+        let f = execute_model(o, &books[o.edge.market], u, cfg, now, None, 4)?;
+        ensure!(f.qty == o.qty, "insufficient_depth");
+        apply_fill(&mut balances, o.edge, &f, u)?;
+        fees.push((f.fee_token, f.fee));
+        if let Some(s) = f.source {
+            sources.push(s);
+        }
+    }
+    let final_usdc = amount(&balances, u.usdc);
+    let cash_profit = final_usdc - start;
+    let depleted: Balances = carry
+        .iter()
+        .filter(|(t, _)| **t != u.usdc)
+        .map(|(t, q)| (*t, (*q - amount(&balances, *t)).max(Decimal::ZERO)))
+        .collect();
+    let opening_inventory_debit = mark_inventory(&depleted, books, u, cfg, now)
+        .indicative_usdc
+        .context("missing opening inventory mark")?;
+    balances.remove(&u.usdc);
+    balances.retain(|_, q| *q > Decimal::ZERO);
+    let profit = cash_profit - opening_inventory_debit;
+    let inventory = Some(mark_inventory(&balances, books, u, cfg, now));
+    Ok(LivePlan {
+        orders,
+        opening,
+        cash_profit,
+        opening_inventory_debit,
+        estimate: Estimate {
+            start,
+            final_usdc,
+            profit,
+            bps: div(profit, start)? * Decimal::from(10000),
+            residual: balances,
+            fees,
+            inventory,
+            execution_sources: Some(sources),
+        },
     })
 }
 pub fn execute(

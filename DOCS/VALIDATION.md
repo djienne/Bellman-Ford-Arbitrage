@@ -206,3 +206,46 @@ Release validation passed **68 tests**: 48 existing research checks, the unchang
 
 The continuous service remained running in epoch `bbo-ioc-v4-2026-09-30`, with all three 10,000-USDC paper accounts intact. Real-account balances, forced-test outcomes, retained dust and public/paper observation epochs remain separate.
 The final 60.0018-second public smoke (`runs/live-build-validation/public-smoke/run-1790778754041345606`) included one controlled reconnect, 5,198 frames, a clean terminal checkpoint and a verified replay. Of 210 structural routes, 30 received prices; among those, accumulated fresh-price coverage was 85.09% and full-L2 coverage 46.65%, including startup/reconnect downtime. Terminal instantaneous coverage is zero because Stop invalidates books. Receipt-to-decision p50/p99 was 0.466/1.380 ms; queue p50/p99 was 0.432/1.350 ms. There were no paper execution deadlines, so timer lag remains unsampled. Recorded volume was 4,531,739 bytes; sampled CPU was 1.57% of one core with 5.824 MiB resident usage. This smoke ran independently and did not replace the continuous paper epoch. The default image tag is restored to a build without the live feature; the optional validated capability remains explicitly buildable.
+
+## Residual sizing and immediate real cleanup (30 September 2026)
+
+The earlier description of all retained inventory as dust was too broad. Its 0.02880303 HYPE included two whole 0.01 lots; its 0.73474002 USDE included 73 whole lots. Each attempt had sold only its own acquired HYPE, and a fixed USDE purchase left unnecessary intermediate inventory. The earlier claim that these quantities could not be liquidated was also too broad: read-only venue records confirmed subsequent manual `FrontendMarket` sells of 0.02 HYPE and 0.73 USDE, both with `reduceOnly=false`. Those external sales remain separate from the original bot session.
+
+Live accounting **version 2** pools confirmed strategy holdings and trims intermediate purchases backward from downstream lots. It includes opening marked inventory in the loss baseline and debits net consumption of opening inventory from estimated cash profit. Cleanup sells all remaining whole lots directly to USDC, with a fixed 50-bps limit, at most two submissions per token and a durable 120-second deadline. Ordinary order minimums and paper formats 1–4 are unchanged. `FrontendMarket` is an observed venue capability; the public [order request documentation](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint) still enumerates Alo/Ioc/Gtc. The exception is therefore restricted to confirmed residual sells and validated below, not generalized to opening orders.
+
+**Actual retest:** `runs/live/spot-residual-20260930-153531`, tested image `sha256:ab8f0f7adb7a69b45c200226ab8be4e25d37025b5c51db84fd18248b4c31bbf9`. Public/account observation began at **15:36:15.780 UTC**; exchange fills ran from **15:36:24.379 to 15:36:36.429 UTC**. Both triangles completed once, within the 50-USDC allocation, 5-USDC loss stop and 32-action allowance. There were **8 signed orders, 10 actual fills, no unresolved outcomes and no open orders** on the independent post-run account check. No production run was started.
+
+| Order | Requested = actual quantity | Fill price / VWAP | Fixed limit |
+|---|---:|---:|---:|
+| Buy HYPE with USDC | 0.58 HYPE | 86.028 | 86.040 |
+| Sell HYPE for USDT0 | 0.58 HYPE | 86.037 | 86.020 |
+| Sell USDT0 for USDC | 49.86 USDT0 | Three fills at 0.99935–0.99937 | 0.99916 |
+| Buy USDE with USDC | 49.84 USDE | 0.99989 | 1.0000 |
+| Buy HYPE with USDE | 0.58 HYPE | 85.902 | 85.919 |
+| Sell HYPE for USDC, retaining one test lot | 0.57 HYPE | 86.014 | 85.997 |
+| Immediate HYPE cleanup | 0.01 HYPE | 86.015 | 85.585 |
+| Immediate USDE cleanup | 0.01 USDE | 0.9996 | 0.99461 |
+
+Both cleanup orders were independently confirmed by `orderStatus` as filled `FrontendMarket` orders with `reduceOnly=false`. Their notionals were **0.86015 USDC** and **0.009996 USDC**, demonstrating the actual bot's sub-$10 path without widening its limits. The second triangle deliberately retained exactly one additional HYPE lot for this test; no extra purchase or holding pause was introduced. First-to-last exchange fill intervals were **2.314 seconds** for triangle A and **5.814 seconds** for triangle B including cleanup. The deliberate whole HYPE lot was sold **2.167 seconds** after the preceding closing fill. These are observed exposure intervals, not venue latency guarantees.
+
+The fresh starting baseline was **71.00072733 USDC**, **0.00880303 HYPE**, **0.00474002 USDE** and **0.00105553 USDT0**, with total indicative opening equity **71.7637745656681 USDC**. It reflects the user's intervening account activity; the old journal was not rewritten. Final cash was **70.95442902 USDC**, a **−0.04629831 USDC** cash change. Final residuals were:
+
+| Token | Confirmed quantity | Lot size | Fresh indicative USDC |
+|---|---:|---:|---:|
+| HYPE | 0.00799105 | 0.01 | 0.687350165750 |
+| USDE | 0.00460243 | 0.01 | 0.004600589028 |
+| USDT0 | 0.00758451 | 0.01 | 0.007579655914 |
+
+Every residual is below one lot; **no whole-lot exposure remains**. Total residual value was **0.6995304106916 USDC**, with bid marks about 388 ms old. Opening-to-ending cash-plus-marked-inventory change was **−0.1098151349765 USDC**. This includes changes in pre-existing inventory marks; it is not realized cash P&L. The forced tests demonstrate execution and cleanup, not profitable arbitrage. Fees were **0.00081198 HYPE**, **0.03493102 USDT0**, **0.00697759 USDE**, and **0.04189901 USDC**, preserving actual fee tokens.
+
+The independent Decimal audit consumed **10 raw WebSocket/REST fills**, reconstructed every token balance, checked lots and fixed limits, and matched the independently queried final account to atomic precision. The observer tape `market/run-1790782575779641033` verified exactly. Compact evidence is in `review/2026-09-30-residual-fix/independent-ledger.json`; raw recordings remain under the live session. Release validation passed **71 checks**, including recorded-fill sizing, opening-inventory profit correction, missing marks, coarser lot rules, cleanup encoding/minimum isolation, writer failure, partial/lost-ack recovery, and the unchanged hot allocation test. Historical recordings of formats **1–4** verified.
+
+| Measurement | p50 | p99 |
+|---|---:|---:|
+| Receipt → detector decision, 1,547 frames | 0.445 ms | 2.428 ms |
+| Queue age | 0.417 ms | 2.112 ms |
+| Submission → HTTP response, 8 orders | 964.242 ms | 1,105.192 ms |
+| Prepared order → terminal fill/balance confirmation, 8 orders | 1,157.576 ms | 1,403.378 ms |
+| Execution journal durable write, 70 records | 3.264 ms | 41.974 ms |
+
+Quota was **1 CPU**, `100000 100000`. Cgroup counters measured **0.591924 CPU seconds over 22.973869 wall seconds**, about **2.58% of one core** after the execution journal opened. A separate startup sample was 18.02% with 5.547 MiB memory; it is not a steady-state average. Session recordings occupied **6,973,232 bytes**. No artificial execution delays or paper deadline samples were introduced. The dedicated continuous paper container and its accounts were not restarted or changed by this retest.

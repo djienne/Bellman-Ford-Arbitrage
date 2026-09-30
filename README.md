@@ -149,6 +149,10 @@ The default build excludes signing. Build the optional feature explicitly for on
 docker compose build --build-arg FEATURES=live screener
 docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live check
 .\live_preflight.ps1
+docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live validate --residual-check --session spot-residual-ID --allow-real-orders
+# The targeted check completes both triangles and immediate residual cleanup.
+# The original comprehensive recovery test is separate:
+.\live_preflight.ps1
 docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live validate --session spot-validation-ID --allow-real-orders
 # Validation deliberately exits after a confirmed first leg to test recovery.
 docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live reconcile --session spot-validation-ID
@@ -158,9 +162,13 @@ docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliqu
 
 Use a fresh ID once. Reusing it cannot fund another account or repeat validation. Credentials stay local, ignored and mounted read-only; they are absent from the continuous service. These commands operate on **mainnet real money**, even though the chosen subaccount is used for testing. The sibling connector is reference code only; the preflight script only reads its Docker state.
 
+Live accounting version 2 pools confirmed strategy leftovers, sizes intermediate buys backward from downstream lots, and includes opening non-USDC inventory in the loss baseline. Live ranking uses the same plan as execution; selling old inventory is not counted as new arbitrage profit. Paper formats 1–4 keep their recorded assumptions. Cleanup sells every remaining whole lot directly to USDC using `FrontendMarket` with the existing 50-bps limit; its sub-$10 exception is restricted to confirmed-inventory sells. Each token gets at most two cleanup submissions, with a durable 120-second deadline and no retry of unknown orders. Only confirmed sub-lot balances may remain, marked separately at fresh bids. Their dollar value depends on the token's lot size, not a fixed dust allowance.
+
+The targeted residual check deliberately retains one extra HYPE lot from the second triangle's closing IOC, then immediately sells it through the cleanup path. It does not repeat the earlier interrupted-first-leg test. A failed cleanup blocks further testing. No extra purchases are made just to dispose of sub-lot dust.
+
 Validation permits 50-USDC opening allocations, a 5-USDC session loss stop, 32 signed actions with unwind reserves, two attempts per required triangle and a 30-minute entry deadline. It tests `USDC → HYPE → USDT0 → USDC` and `USDC → USDE → HYPE → USDC`, post-only cancellation, a non-crossing IOC, deliberately lost acknowledgement, and an interrupted first leg followed by explicit cleanup. Forced losses are diagnostic; they are not observed profitable arbitrage. Stops prevent new entries, not guaranteed maximum loss.
 
-Real legs use actual confirmed fills, fee tokens and reconciled spot balances, without simulated latency. Unknown orders are reconciled by their original IDs and never resent. Explicit cleanup permits two orders per reverse leg and a 120-second deadline. Confirmed residuals remain inventory; marks use fresh direct-USDC bids and are never spendable. Dust checks consider authorized exits, and pause at more than 5 USDC, unknown marks or material holdings. The shared XEMM key may be used only while its live trading is inactive; a per-signer file lock prevents duplicate owners in this project. Foreign orders, fills or unexplained balance changes block new trading.
+Real legs use actual confirmed fills, fee tokens and reconciled spot balances, without simulated latency. Unknown orders are reconciled by their original IDs and never resent. Version-2 cleanup permits two submissions per token within a durable 120-second deadline; legacy sessions retain their reverse-path recovery. Confirmed sub-lot residuals remain inventory; marks use fresh direct-USDC bids and are never spendable. Unknown marks or remaining whole lots block new trading. The shared XEMM key may be used only while its live trading is inactive; a per-signer file lock prevents duplicate owners in this project. Foreign orders, fills or unexplained balance changes block new trading.
 
 Evidence is separate in `runs/live/<session>/`: durable intents, responses, actual fills, balance checkpoints and an observer-only public/account tape. Its tape can be verified with ordinary `replay --verify`; it cannot create counterfactual paper accounts. Live recovery never advances an old forward route automatically. Storage failure stops inventory orders; only cancellation of this session's resting orders is attempted without a durable intent, leaving recovery explicitly unresolved.
 

@@ -230,7 +230,28 @@ pub struct OrderAction {
     orders: [OrderWire; 1],
     grouping: &'static str,
 }
-pub fn order_action(order: &Order, u: &Universe, cloid: &str, alo: bool) -> Result<OrderAction> {
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Purpose {
+    #[default]
+    Ioc,
+    PostOnly,
+    Residual,
+}
+#[cfg(test)]
+fn order_action(order: &Order, u: &Universe, cloid: &str, alo: bool) -> Result<OrderAction> {
+    order_action_for(
+        order,
+        u,
+        cloid,
+        if alo { Purpose::PostOnly } else { Purpose::Ioc },
+    )
+}
+pub fn order_action_for(
+    order: &Order,
+    u: &Universe,
+    cloid: &str,
+    purpose: Purpose,
+) -> Result<OrderAction> {
     let m = &u.markets[order.edge.market];
     let dp = u.tokens[&m.base].sz_decimals;
     ensure!(
@@ -242,10 +263,21 @@ pub fn order_action(order: &Order, u: &Universe, cloid: &str, alo: bool) -> Resu
         quantity::limit_price(order.limit, dp, order.edge.buy) == order.limit,
         "invalid live tick"
     );
-    ensure!(
-        order.qty * order.limit >= Decimal::from(10),
-        "minimum live notional"
-    );
+    if purpose == Purpose::Residual {
+        ensure!(
+            !order.edge.buy && m.quote == u.usdc,
+            "residual order must sell to USDC"
+        );
+        ensure!(
+            order.qty == quantity::floor(order.budget, dp),
+            "residual must sell every confirmed whole lot"
+        );
+    } else {
+        ensure!(
+            order.qty * order.limit >= Decimal::from(10),
+            "minimum live notional"
+        );
+    }
     let spent = if order.edge.buy {
         order.qty * order.limit
     } else {
@@ -266,7 +298,11 @@ pub fn order_action(order: &Order, u: &Universe, cloid: &str, alo: bool) -> Resu
             r: false,
             t: OrderType {
                 limit: Limit {
-                    tif: if alo { "Alo" } else { "Ioc" },
+                    tif: match purpose {
+                        Purpose::PostOnly => "Alo",
+                        Purpose::Ioc => "Ioc",
+                        Purpose::Residual => "FrontendMarket",
+                    },
                 },
             },
             c: cloid.into(),

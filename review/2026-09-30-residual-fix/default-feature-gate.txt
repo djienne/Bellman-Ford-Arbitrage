@@ -1,0 +1,3 @@
+ Container bellman-hyperliquid-screener-run-a86c441b988c Creating
+ Container bellman-hyperliquid-screener-run-a86c441b988c Created
+Error: live commands require an explicit build with --features live

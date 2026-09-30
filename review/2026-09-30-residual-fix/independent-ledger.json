@@ -1,0 +1,398 @@
+{
+  "session": "spot-residual-20260930-153531",
+  "verified_utc": "2026-09-30T15:38:15.726238+00:00",
+  "ledger_conserved": true,
+  "independent_raw_fill_count": 10,
+  "actions": 8,
+  "completed_routes": {
+    "107B>207S>166S": 1,
+    "107S>150B>255B": 1
+  },
+  "orders": [
+    {
+      "market": "@107",
+      "buy": true,
+      "requested": "0.58",
+      "filled": "0.58",
+      "vwap": "86.028",
+      "limit": "86.040",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "HYPE",
+          "amount": "0.00040599"
+        }
+      ]
+    },
+    {
+      "market": "@207",
+      "buy": false,
+      "requested": "0.58",
+      "filled": "0.58",
+      "vwap": "86.037",
+      "limit": "86.020",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "USDT0",
+          "amount": "0.03493102"
+        }
+      ]
+    },
+    {
+      "market": "@166",
+      "buy": false,
+      "requested": "49.86",
+      "filled": "49.86",
+      "vwap": "0.9993628620136381869233854793",
+      "limit": "0.99916",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "USDC",
+          "amount": "0.0030039"
+        },
+        {
+          "token": "USDC",
+          "amount": "0.0029647"
+        },
+        {
+          "token": "USDC",
+          "amount": "0.00100734"
+        }
+      ]
+    },
+    {
+      "market": "@150",
+      "buy": true,
+      "requested": "49.84",
+      "filled": "49.84",
+      "vwap": "0.99989",
+      "limit": "1.0000",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "USDE",
+          "amount": "0.00697759"
+        }
+      ]
+    },
+    {
+      "market": "@255",
+      "buy": true,
+      "requested": "0.58",
+      "filled": "0.58",
+      "vwap": "85.902",
+      "limit": "85.919",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "HYPE",
+          "amount": "0.00040599"
+        }
+      ]
+    },
+    {
+      "market": "@107",
+      "buy": false,
+      "requested": "0.57",
+      "filled": "0.57",
+      "vwap": "86.014",
+      "limit": "85.997",
+      "purpose": "Ioc",
+      "fees": [
+        {
+          "token": "USDC",
+          "amount": "0.03431958"
+        }
+      ]
+    },
+    {
+      "market": "@107",
+      "buy": false,
+      "requested": "0.01",
+      "filled": "0.01",
+      "vwap": "86.015",
+      "limit": "85.585",
+      "purpose": "Residual",
+      "fees": [
+        {
+          "token": "USDC",
+          "amount": "0.0006021"
+        }
+      ]
+    },
+    {
+      "market": "@150",
+      "buy": false,
+      "requested": "0.01",
+      "filled": "0.01",
+      "vwap": "0.9996",
+      "limit": "0.99461",
+      "purpose": "Residual",
+      "fees": [
+        {
+          "token": "USDC",
+          "amount": "0.00000139"
+        }
+      ]
+    }
+  ],
+  "cleanup_venue_status": [
+    {
+      "market": "@107",
+      "quantity": "0.01",
+      "limit": "85.585",
+      "tif": "FrontendMarket",
+      "reduce_only": false,
+      "status": "filled"
+    },
+    {
+      "market": "@150",
+      "quantity": "0.01",
+      "limit": "0.99461",
+      "tif": "FrontendMarket",
+      "reduce_only": false,
+      "status": "filled"
+    }
+  ],
+  "open_order_count": 0,
+  "unresolved_exposure": false,
+  "opening_balances": {
+    "USDC": "71.00072733",
+    "HYPE": "0.00880303",
+    "USDE": "0.00474002",
+    "USDT0": "0.00105553"
+  },
+  "final_balances": {
+    "USDC": "70.95442902",
+    "HYPE": "0.00799105",
+    "USDE": "0.00460243",
+    "USDT0": "0.00758451"
+  },
+  "fees_by_token": {
+    "HYPE": "0.00081198",
+    "USDT0": "0.03493102",
+    "USDC": "0.04189901",
+    "USDE": "0.00697759"
+  },
+  "cash_change_usdc": "-0.04629831",
+  "inventory_adjusted_change_usdc": "-0.1098151349765",
+  "final_inventory": {
+    "all_dust": true,
+    "indicative_usdc": "0.6995304106916",
+    "marks": [
+      {
+        "classification": "sub_lot_residual",
+        "exchange_ms": 1790782597918,
+        "indicative_usdc": "0.68735016575",
+        "lot_size": "0.01",
+        "quantity": "0.00799105",
+        "receipt_age_ns": 388002864,
+        "source": "@107",
+        "token": 150,
+        "untradeable_dust": true
+      },
+      {
+        "classification": "sub_lot_residual",
+        "exchange_ms": 1790782597918,
+        "indicative_usdc": "0.004600589028",
+        "lot_size": "0.01",
+        "quantity": "0.00460243",
+        "receipt_age_ns": 388000857,
+        "source": "@150",
+        "token": 235,
+        "untradeable_dust": true
+      },
+      {
+        "classification": "sub_lot_residual",
+        "exchange_ms": 1790782597918,
+        "indicative_usdc": "0.0075796559136",
+        "lot_size": "0.01",
+        "quantity": "0.00758451",
+        "receipt_age_ns": 387998051,
+        "source": "@166",
+        "token": 268,
+        "untradeable_dust": true
+      }
+    ]
+  },
+  "opening_equity_usdc": "71.7637745656681",
+  "exposure": [
+    {
+      "completed": true,
+      "fill_to_final_fill_ms": 2314,
+      "first_fill_exchange_ms": 1790782584379,
+      "inventory": {
+        "all_dust": true,
+        "indicative_usdc": "0.7347150552605",
+        "marks": [
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782587632,
+            "indicative_usdc": "0.7223973512",
+            "lot_size": "0.01",
+            "quantity": "0.00839704",
+            "receipt_age_ns": 727490276,
+            "source": "@107",
+            "token": 150,
+            "untradeable_dust": true
+          },
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782588031,
+            "indicative_usdc": "0.004738123992",
+            "lot_size": "0.01",
+            "quantity": "0.00474002",
+            "receipt_age_ns": 313500228,
+            "source": "@150",
+            "token": 235,
+            "untradeable_dust": true
+          },
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782587632,
+            "indicative_usdc": "0.0075795800685",
+            "lot_size": "0.01",
+            "quantity": "0.00758451",
+            "receipt_age_ns": 727482780,
+            "source": "@166",
+            "token": 268,
+            "untradeable_dust": true
+          }
+        ]
+      },
+      "last_fill_exchange_ms": 1790782586693,
+      "route": "107B>207S>166S",
+      "timing_scope": "exchange fill timestamps; residual sub-lot holdings remain"
+    },
+    {
+      "completed": true,
+      "fill_to_final_fill_ms": 5814,
+      "first_fill_exchange_ms": 1790782590615,
+      "inventory": {
+        "all_dust": true,
+        "indicative_usdc": "0.6995304106916",
+        "marks": [
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782597378,
+            "indicative_usdc": "0.68735016575",
+            "lot_size": "0.01",
+            "quantity": "0.00799105",
+            "receipt_age_ns": 134628915,
+            "source": "@107",
+            "token": 150,
+            "untradeable_dust": true
+          },
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782597378,
+            "indicative_usdc": "0.004600589028",
+            "lot_size": "0.01",
+            "quantity": "0.00460243",
+            "receipt_age_ns": 134624724,
+            "source": "@150",
+            "token": 235,
+            "untradeable_dust": true
+          },
+          {
+            "classification": "sub_lot_residual",
+            "exchange_ms": 1790782597378,
+            "indicative_usdc": "0.0075796559136",
+            "lot_size": "0.01",
+            "quantity": "0.00758451",
+            "receipt_age_ns": 134622569,
+            "source": "@166",
+            "token": 268,
+            "untradeable_dust": true
+          }
+        ]
+      },
+      "last_fill_exchange_ms": 1790782596429,
+      "route": "107S>150B>255B",
+      "timing_scope": "exchange fill timestamps; residual sub-lot holdings remain"
+    }
+  ],
+  "entry_plans": [
+    {
+      "route": "107B>207S>166S",
+      "quantities": [
+        "0.58",
+        "0.58",
+        "49.76"
+      ],
+      "cash_profit": "-0.17200467",
+      "opening_inventory_debit": "0.03492209000",
+      "adjusted_profit": "-0.20692676000"
+    },
+    {
+      "route": "107S>150B>255B",
+      "quantities": [
+        "49.84",
+        "0.58",
+        "0.58"
+      ],
+      "cash_profit": "0.0105664",
+      "opening_inventory_debit": "0.034916000",
+      "adjusted_profit": "-0.024349600"
+    }
+  ],
+  "timings": {
+    "receipt_to_decision": {
+      "max_ns": 7318507,
+      "mean_ns": 582301,
+      "p50_us": 445,
+      "p95_us": 1223,
+      "p99_us": 2428,
+      "percentile_resolution_us": 1,
+      "samples": 1547
+    },
+    "queue_age": {
+      "max_ns": 7236047,
+      "mean_ns": 547330,
+      "p50_us": 417,
+      "p95_us": 1194,
+      "p99_us": 2112,
+      "percentile_resolution_us": 1,
+      "samples": 1547
+    },
+    "submission_response": {
+      "max_ns": 1105192152,
+      "mean_ns": 1000841497,
+      "p50_us": 964242,
+      "p95_us": 1105192,
+      "p99_us": 1105192,
+      "percentile_resolution_us": 1,
+      "samples": 8
+    },
+    "fill_and_balance_confirmation": {
+      "max_ns": 1403378167,
+      "mean_ns": 1197150810,
+      "p50_us": 1157576,
+      "p95_us": 1403378,
+      "p99_us": 1403378,
+      "percentile_resolution_us": 1,
+      "samples": 8
+    },
+    "durable_write": {
+      "max_ns": 41974654,
+      "mean_ns": 3953103,
+      "p50_us": 3264,
+      "p95_us": 7628,
+      "p99_us": 41974,
+      "percentile_resolution_us": 1,
+      "samples": 70
+    }
+  },
+  "cpu_quota": "100000 100000",
+  "cpu_usage": {
+    "scope": "since execution journal opened",
+    "used_usec": 591924,
+    "wall_ns": 22973869127
+  },
+  "recording_bytes": 6973232,
+  "raw_sources": [
+    "runs/live/spot-residual-20260930-153531/market/run-1790782575779641033/events-00000.jsonl"
+  ]
+}
