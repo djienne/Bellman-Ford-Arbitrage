@@ -20,6 +20,8 @@ struct Frame {
     receipt_ns: u64,
     utc_ns: u64,
     text: String,
+    #[serde(default)]
+    processing_ns: u64,
 }
 fn utc() -> u64 {
     SystemTime::now()
@@ -104,6 +106,7 @@ fn load_live(dir: &Path) -> Result<Vec<Frame>> {
                         receipt_ns: r["input"]["receipt_ns"].as_u64().context("receipt")?,
                         utc_ns: r["input"]["receipt_utc_ns"].as_u64().context("utc")?,
                         text: text.into(),
+                        processing_ns: 0,
                     });
                 }
             }
@@ -111,12 +114,28 @@ fn load_live(dir: &Path) -> Result<Vec<Frame>> {
     }
     Ok(frames)
 }
-async fn capture(fast: bool, seconds: u64, output: &Path) -> Result<Vec<Frame>> {
+async fn connect(
+    subscriptions: &[Value],
+) -> Result<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+> {
     let (mut ws, _) = timeout(
         Duration::from_secs(15),
         connect_async("wss://api.hyperliquid.xyz/ws"),
     )
     .await??;
+    for s in subscriptions {
+        timeout(
+            Duration::from_secs(5),
+            ws.send(Message::Text(
+                json!({"method":"subscribe","subscription":s}).to_string(),
+            )),
+        )
+        .await??;
+    }
+    Ok(ws)
+}
+async fn capture(fast: bool, seconds: u64, output: &Path, calibration: bool) -> Result<Vec<Frame>> {
     let origin = Instant::now();
     let began_utc = utc();
     let mut subscriptions = vec![
@@ -126,16 +145,11 @@ async fn capture(fast: bool, seconds: u64, output: &Path) -> Result<Vec<Frame>> 
     if fast {
         subscriptions[1]["fast"] = true.into();
     }
-    for s in &subscriptions {
-        timeout(
-            Duration::from_secs(5),
-            ws.send(Message::Text(
-                json!({"method":"subscribe","subscription":s}).to_string(),
-            )),
-        )
-        .await??;
-    }
+    let mut ws = connect(&subscriptions).await?;
     let mut frames = Vec::new();
+    let mut sent_ping = None;
+    let mut rtts = Vec::new();
+    let mut reconnects = Vec::new();
     let mut ping = interval(Duration::from_secs(20));
     let mut progress = interval(Duration::from_secs(30));
     let deadline = sleep(Duration::from_secs(seconds));
@@ -143,12 +157,27 @@ async fn capture(fast: bool, seconds: u64, output: &Path) -> Result<Vec<Frame>> 
     loop {
         tokio::select! {
             _=&mut deadline=>break,
-            _=ping.tick()=>{timeout(Duration::from_secs(5),ws.send(Message::Text(r#"{"method":"ping"}"#.into()))).await??;},
+            _=ping.tick()=>{
+                if sent_ping.is_some() { reconnects.push(json!({"at_ns":origin.elapsed().as_nanos(),"reason":"pong_missing"})); break; }
+                sent_ping = Some(origin.elapsed().as_nanos() as u64);
+                timeout(Duration::from_secs(5),ws.send(Message::Text(r#"{"method":"ping"}"#.into()))).await??;
+            },
             _=progress.tick()=>eprintln!("mode={} elapsed={}s frames={}",if fast{"fast"}else{"default"},origin.elapsed().as_secs(),frames.len()),
-            next=ws.next()=>{let receipt_ns=origin.elapsed().as_nanos() as u64;let utc_ns=utc();match next.context("probe disconnected")?? {
-                Message::Text(text)=>{let v:Value=serde_json::from_str(&text)?;if v["channel"]=="error" {bail!("subscription error: {text}");}frames.push(Frame{receipt_ns,utc_ns,text});},
-                Message::Ping(p)=>{timeout(Duration::from_secs(5),ws.send(Message::Pong(p))).await??;},
-                Message::Close(c)=>bail!("probe closed: {c:?}"),_=>{}
+            next=ws.next()=>{let receipt_ns=origin.elapsed().as_nanos() as u64;let utc_ns=utc();match next {
+                Some(Ok(Message::Text(text)))=>{let v:Value=serde_json::from_str(&text)?;if v["channel"]=="error" {bail!("subscription error: {text}");}
+                    if v["channel"]=="pong" {if let Some(at)=sent_ping.take(){rtts.push((receipt_ns-at) as f64/1e6);}}
+                    let processing_ns=origin.elapsed().as_nanos() as u64-receipt_ns;
+                    frames.push(Frame{receipt_ns,utc_ns,text,processing_ns});},
+                Some(Ok(Message::Ping(p)))=>{timeout(Duration::from_secs(5),ws.send(Message::Pong(p))).await??;},
+                None | Some(Err(_)) | Some(Ok(Message::Close(_)))=>{
+                    ensure!(calibration,"probe disconnected");
+                    reconnects.push(json!({"at_ns":receipt_ns,"utc_ns":utc_ns}));
+                    let remaining=Duration::from_secs(seconds).saturating_sub(origin.elapsed());
+                    match timeout(remaining.min(Duration::from_secs(15)),connect(&subscriptions)).await {
+                        Ok(Ok(next))=>{ws=next;sent_ping=None;},
+                        _=>break,
+                    }
+                },_=>{}
             }}
         }
     }
@@ -156,7 +185,7 @@ async fn capture(fast: bool, seconds: u64, output: &Path) -> Result<Vec<Frame>> 
     let mode = if fast { "fast" } else { "default" };
     write_json(
         &output.join(format!("{mode}-manifest.json")),
-        &json!({"coin":COIN,"seconds":seconds,"started_utc_ns":began_utc,"ended_utc_ns":utc(),"subscriptions":subscriptions,"cpu_quota":fs::read_to_string("/sys/fs/cgroup/cpu.max").unwrap_or_default(),"note":"Independent direct tungstenite receiver; no engine, hot/cold queues, or per-frame disk writes."}),
+        &json!({"coin":COIN,"seconds":seconds,"started_utc_ns":began_utc,"ended_utc_ns":utc(),"subscriptions":subscriptions,"cpu_quota":fs::read_to_string("/sys/fs/cgroup/cpu.max").unwrap_or_default(),"calibration":calibration,"deployment_region":std::env::var("AWS_REGION").ok(),"ping_rtt_ms":percentiles(rtts),"receipt_to_parse_us":percentiles(frames.iter().map(|f| f.processing_ns as f64/1000.0).collect()),"depth_cadence":stats(&observations(&frames,"l2Book",0,u64::MAX)),"reconnects":reconnects,"note":"Public RTT is not order confirmation. No engine queue; local receipt-to-parse measured. Exchange timestamps are not synchronized with this clock. Intended Tokyo timing remains unverified until this probe runs there."}),
     )?;
     let mut file = BufWriter::new(File::create(output.join(format!("{mode}-frames.jsonl")))?);
     for f in &frames {
@@ -171,12 +200,13 @@ async fn capture(fast: bool, seconds: u64, output: &Path) -> Result<Vec<Frame>> 
 async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
     ensure!(
-        args.len() == 4,
-        "usage: depth_probe RUN_DIR OUTPUT_DIR SECONDS_PER_MODE"
+        args.len() == 4 || (args.len() == 5 && args[4] == "--tokyo-calibration"),
+        "usage: depth_probe RUN_DIR OUTPUT_DIR SECONDS_PER_MODE [--tokyo-calibration]"
     );
     let live = Path::new(&args[1]);
     let out = Path::new(&args[2]);
     let seconds: u64 = args[3].parse()?;
+    let calibration = args.len() == 5;
     ensure!(
         (30..=600).contains(&seconds),
         "duration must be 30..600 seconds"
@@ -196,8 +226,16 @@ async fn main() -> Result<()> {
         "expected HYPE/USDC identity"
     );
     let mut reports = Vec::new();
+    if calibration {
+        capture(true, seconds, out, true).await?;
+        println!(
+            "Calibration saved to {}. No order latency inferred; latency grid unchanged.",
+            out.display()
+        );
+        return Ok(());
+    }
     for fast in [false, true] {
-        let frames = capture(fast, seconds, out).await?;
+        let frames = capture(fast, seconds, out, false).await?;
         // Exclude initial subscription snapshots. Compare equal exchange-time windows;
         // absolute UTC clocks across processes need not be synchronized.
         let all = observations(&frames, "bbo", 0, u64::MAX);
@@ -234,6 +272,7 @@ mod tests {
         let f = |n, e| Frame {
             receipt_ns: n,
             utc_ns: 0,
+            processing_ns: 0,
             text: json!({"channel":"l2Book","data":{"coin":COIN,"time":e,"levels":[[],[]]}})
                 .to_string(),
         };

@@ -7,6 +7,7 @@ use bellman_arb::{
 };
 use serde_json::json;
 use std::{
+    io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -75,7 +76,7 @@ async fn execute(args: &[String]) -> Result<()> {
             .transpose()?;
         anyhow::ensure!(
             !args.iter().any(|a| a == "--execution-model") || execution_model.is_some(),
-            "execution model requires 3 or 4"
+            "execution model requires 3, 4 or 5"
         );
         anyhow::ensure!(
             !args.iter().any(|a| a == "--new-paper-epoch"),
@@ -183,6 +184,14 @@ async fn execute(args: &[String]) -> Result<()> {
         .as_ref()
         .map(|p| journal::recover(p))
         .transpose()?;
+    let prior_manifest: Option<Manifest> = prior_dir
+        .as_ref()
+        .map(|p| -> Result<_> {
+            Ok(serde_json::from_reader(BufReader::new(std::fs::File::open(
+                p.join("manifest.json"),
+            )?))?)
+        })
+        .transpose()?;
     let (epoch, predecessor, fresh_epoch) =
         journal::paper_epoch(&root, prior_dir.as_deref(), new_epoch.as_deref())?;
     anyhow::ensure!(
@@ -227,19 +236,36 @@ async fn execute(args: &[String]) -> Result<()> {
     }
     let mut accounts = None;
     if let Some((old, mut saved)) = prior.filter(|_| !fresh_epoch) {
+        if prior_manifest.as_ref().is_some_and(|m| m.format < 5) {
+            let final_report: serde_json::Value = serde_json::from_reader(BufReader::new(std::fs::File::open(
+                prior_dir.as_ref().unwrap().join("final.json"),
+            )?))?;
+            anyhow::ensure!(
+                final_report["recording_complete"] == true,
+                "model upgrade requires a clean durable predecessor checkpoint"
+            );
+        }
         for a in &mut saved {
             a.remap(&old, &u)?;
             a.interrupt("restart recording gap");
+            a.upgrade(
+                prior_manifest.as_ref().unwrap().format,
+                prior_manifest.as_ref().map(|m| m.run_id.clone()),
+                u.usdc,
+            );
         }
         accounts = Some(saved);
     }
     let created = hyperliquid::utc_ns();
     let mut engine = Engine::new(cfg.clone(), u.clone(), accounts)?;
-    engine.model_version = 4;
+    engine.model_version = 5;
+    for a in &mut engine.accounts {
+        a.upgrade(5, None, u.usdc);
+    }
     engine.paper_epoch = epoch.clone();
     engine.predecessor_run_id = predecessor.clone();
     let manifest = Manifest {
-        format: 4,
+        format: 5,
         observer_only: false,
         run_id: format!("run-{created}"),
         created_utc_ns: created,

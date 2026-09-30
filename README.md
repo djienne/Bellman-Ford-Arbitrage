@@ -4,7 +4,7 @@ This is an **arbitrage opportunity screener and paper trader** for Hyperliquid s
 
 **Paper by default.** Continuous collection needs no credentials and sends no orders. An optional live feature provides explicitly armed, bounded spot execution tests and finite live sessions. Production live trading is disabled; the continuous service remains the paper screener.
 
-> **Validated 30 Sep 2026:** paper recording format 4 and optional live accounting version 2. Both real test triangles and sub-$10 residual cleanup passed; 71 release checks and historical replays passed. Continuous paper collection remains separate from those forced tests. See [validation](DOCS/VALIDATION.md#residual-sizing-and-immediate-real-cleanup-30-september-2026) and the dated [observation review](DOCS/OBSERVATION_REVIEW.md). Profitable live arbitrage has not been demonstrated.
+> **Paper model 5:** pooled lot-aware sizing and automatic confirmed-inventory cleanup. Existing balances and the funding epoch continue across the upgrade. Optional live accounting stays at version 2. See [validation](DOCS/VALIDATION.md) and the dated [observation review](DOCS/OBSERVATION_REVIEW.md). Profitable live arbitrage has not been demonstrated.
 
 ## How it works
 
@@ -57,7 +57,7 @@ docker compose run --rm screener run --runs runs/smoke --duration 600 --reconnec
 docker compose run --rm screener replay runs/run-... --verify
 docker compose run --rm screener replay runs/run-... --latency-ms 100,250,500 --quote-age-ms 500 --depth-age-ms 500
 # Counterfactual comparison on fresh accounts; cannot be combined with --verify
-docker compose run --rm screener replay runs/run-... --execution-model 4
+docker compose run --rm screener replay runs/run-... --execution-model 5
 ```
 
 `--verify` re-checks every recorded engine event under the original assumptions. Latency, freshness, execution-model or forced-entry overrides use fresh, independent accounts and cannot be combined with `--verify`. Observer-only live tapes permit exact replay only; replay never modifies the evidence.
@@ -84,7 +84,7 @@ Forced replay uses separate accounts, one attempt per scenario, normal entries o
 | Quote and depth max age | 1 s, independently |
 | Socket watchdog | 30 s |
 | Recording rotation / cap | 1 h or 256 MiB / 50 GiB (stop, never delete) |
-| Paper residual-mark budget | 10 USDC per account; marks are not spendable cash |
+| Paper dust | Confirmed quantity below its token's order step; marks are not spendable cash |
 
 Decimal quantities and bps are strings. Set `l2_fast = false` for the slower twenty-level feed; see the [feed comparison](DOCS/DEPTH_FEED_CHECK.md).
 
@@ -92,9 +92,9 @@ Decimal quantities and bps are strings. Set `l2_fast = false` for the slower twe
 
 - **Order flow.** Each order fixes quantity and limit at submission and fills against the levels available at arrival, after the assumed outbound delay. Only confirmed net proceeds fund the next leg. At the primary 250-ms-each-way setting, a triangle needs at least 1.5 s of assumed network delay plus measured processing delay. One timer per earliest deadline drives execution; observations processed after a deadline cannot improve that fill.
 - **Books.** Actual bids/asks and all received levels, with separate BBO/L2 clocks. A fresh traded-side quote outside the fixed IOC limit supports a zero fill. Fresh BBO can support an entire order at the best price; otherwise execution requires coherent traded-side L2. Changed BBO prices/quantities are never stitched into old deeper levels. Unknown deeper remainders are **unobservable**, while a partial fill is observable when the fixed limit excludes all unseen worse prices. Opposite-side updates alone do not invalidate an order. A fresh BBO does not refresh L2; stale data, crosses and disconnects invalidate evidence.
-- **Fees.** Fractional per market: 7 bps base spot taker, with the documented 80% reduction for quote-token pairs inferred from token identities. Unverified account, staking and referral discounts are unapplied. `discover` shows each rate's provenance. Paper fills and pre-trade estimates model fees in the received token, rounded up to its atomic unit; real fills use the venue's actual fee amount and token. Lot size, price precision and the 10-quote-token minimum apply to every paper leg.
+- **Sizing and fees.** Each account pools confirmed residuals, sizes downstream lots and trims intermediate buys backward. Estimates use a private copy of its shadow liquidity. Ranking and the strict five-basis-point threshold use cash profit after deducting the decision-time bid value of consumed opening inventory. A later funding shortfall triggers cleanup. Fractional fees are 7 bps base spot taker, with the documented 80% reduction for quote-token pairs inferred from token identities; unverified discounts remain unapplied. `discover` shows provenance. Received-token fees round up to an atomic unit; saved real fills show small rounding differences, so this is a conservative convention. Forward legs retain the 10-quote-token minimum.
 - **Shadow liquidity.** Each latency scenario keeps its own finite depth shared across routes. Fills consume it; an identical snapshot does not refill it, and levels beyond a truncated snapshot cannot manufacture replenishment. It persists across restarts. The scenarios are alternatives: **never sum their profit**.
-- **Failures and unwinds.** A partial or rejected leg abandons the route and unwinds through the completed legs under the same latency rules. Confirmed residuals below modeled lot/minimum-notional constraints may remain within the paper residual budget, using fresh direct-USDC bid marks. This legacy paper allowance differs from the live sub-lot rule below. An unobservable fill keeps its reservation and pending order rather than returning hypothetical cash, and no failed attempt resets to starting funds.
+- **Cleanup and continuation.** Failed legs and whole-lot leftovers enter cleanup. Confirmed inventory sells directly to USDC, using the observed `FrontendMarket` sub-$10 exception, at most 50 bps tolerance and the same arrival/confirmation delays. Limited visible liquidity permits a deliberate smaller chunk; a top-only chunk fixes its limit at the observed bid. At most two submissions per token and liquidity opportunity are allowed; after that the account waits for changed traded-side liquidity or a restored eligible view. Identical frames cannot rearm retries or replenish liquidity. Screening continues while cleanup waits. New entries resume after all holdings are sub-lot, marks are fresh and cash is sufficient. No extra purchases or exchange-wide dust-conversion credits are invented. An unobservable fill retains its reservation and pending order; later quotes cannot reconcile it.
 
 This is a local receipt-time model, not a reconstruction of the matching engine. Public books reveal neither queue priority nor true executable latency.
 
@@ -107,17 +107,25 @@ Each `runs/run-...` directory contains:
 - `status.json`: minute summary, rankings, accounts, inventory marks, and separate structural / dormant / fresh-price / executable-depth coverage.
 - `final.json`: shutdown result. A clean run needs `recording_complete = true` and a checkpoint matching the durable terminal record; the file's existence alone proves nothing.
 
-New recordings use manifest **format 4**, including source clocks and `bbo:top`, `bbo:zero` or full-L2 execution evidence. Formats 1–3 still verify with their original behavior. Full-L2 coverage excludes BBO-only quantity; successful size estimates identify their execution sources. `--execution-model 3|4` uses fresh comparison accounts and labels the result counterfactual.
+New recordings use manifest **format 5**, preserving source clocks and `bbo:top`, `bbo:zero` or full-L2 execution evidence. Formats 1–4 still verify with their original behavior. Full-L2 coverage excludes BBO-only quantity; successful size estimates identify their execution sources. `--execution-model 3|4|5` uses fresh comparison accounts and labels the result counterfactual. Account-specific eligibility and estimates are journaled separately from the inventory-free route screen.
 
-**Reading the numbers.** `realized_usdc` is the confirmed USDC cash change of observable attempts. Residual inventory is valued at separate indicative marks; pending reservations and unresolved exposure are not profit. Episodes end on an observed failure and are censored by missing data, with no grace period inflating durations. Exchange timestamps keep millisecond resolution; receipt clocks are stored in nanoseconds, which is storage resolution, **not** nanosecond accuracy. Replay follows recorded order and processing times, never exchange-time order.
+**Reading the numbers.** `realized_usdc` retains its historical cash-change meaning. Model 5 separately reports cash change, inherited-inventory recovery proceeds, adjusted closed-cycle profit and counter deltas from the model transition. Selling model-4 holdings cannot become model-5 arbitrage profit. Residual quantities, actual lots, marks and ages remain separate; pending reservations and unresolved exposure are not profit. Episodes end on observed failure and are censored by missing data. Exchange timestamps keep millisecond resolution; receipt clocks use nanosecond storage resolution, **not** nanosecond accuracy. Replay preserves local order and measured processing delay. The 100/250/500-ms grid is a sensitivity assumption for the intended Tokyo deployment, whose execution timing is unverified.
 
 ## Operations
 
-- **Recovery** follows the durable `runs/current.json` pointer. A validated format-3/4 terminal checkpoint restores all accounts; unclean or legacy segments use verified prefix replay. Remapping uses token and market identities and keeps reservations, pending orders, dust and shadow depletion. Metadata and fees refresh on restart and start a new segment.
+- **Recovery** follows the durable `runs/current.json` pointer. A validated format-3–5 terminal checkpoint restores all accounts; unclean or legacy segments use verified prefix replay. Upgrading to model 5 requires a clean predecessor checkpoint and journals the transition without new funding. Only confirmed inventory pauses become cleanup waiting states; unknown orders remain unresolved. Waiting cleanup and retry/depletion state persist. A recording gap during an order blocks that attempt. Metadata and fees refresh on restart in a new segment.
 - **Independent paper epochs.** After a clean shutdown, `run --new-paper-epoch ID` explicitly starts separate 10,000-USDC accounts and shadow ledgers. The manifest and terminal checkpoint identify the epoch and predecessor run; old accounts and unresolved exposure remain in their original evidence. Reusing the current ID restores balances without adding funds; older IDs are rejected. Ordinary restarts continue the current epoch. Never pool account outcomes across epochs or latency scenarios.
 - **Blocked state.** At the recording cap, `runs/RECORDING_LIMIT_REACHED` blocks startup before discovery. Persistent recording or recovery errors leave the service waiting for an operator, with the reason in the logs and `runs/blocked.json`. Fix the cause and restart explicitly; nothing is deleted, reset or restart-looped. Bounded runs exit non-zero instead.
 - **Transient outages** (connection failures, timeouts, 5xx, rate limiting) on the metadata fetch retry with capped backoff, including when Docker starts before networking. Malformed metadata is a blocking error.
-- **Dust recheck.** Stop the service, then run `run --reconcile-dust 250` against the existing `runs/` (250 identifies the scenario). It waits up to 30 s for marks and journals its decision; it never edits balances or clears unresolved attempts.
+- **Dust recheck.** Model 5 automatically rechecks marks and confirmed cleanup on feed/health events. The old dollar dust allowance and explicit reconciliation behavior remain part of historical replay only. Unknown fills never resume automatically.
+
+For a future AWS `ap-northeast-1` host, copy a public run manifest and run this bounded calibration there (the output directory must be new):
+
+```powershell
+docker compose run --rm --entrypoint depth-probe -e AWS_REGION=ap-northeast-1 screener runs/run-... runs/tokyo-calibration 600 --tokyo-calibration
+```
+
+It uses fast public depth only and records ping RTT, cadence, receipt-to-parse delay, reconnects and the effective CPU quota. It does not measure the engine queue or order confirmation. Hyperliquid returns transaction responses after committed L1 execution ([API servers](https://hyperliquid.gitbook.io/hyperliquid-docs/hypercore/api-servers)); public ping RTT cannot establish those timings. Calibration never changes the latency grid. No VPS is provisioned by this command.
 
 Review coverage after 24 hours, and accumulate at least seven **healthy** recording days across activity conditions before drawing conclusions.
 

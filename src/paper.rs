@@ -32,6 +32,40 @@ pub struct Attempt {
     pub unwind: Option<Vec<Edge>>,
     pub pending: Option<Pending>,
     pub tainted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sizing: Option<Sizing>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Sizing {
+    pub orders: Vec<Order>,
+    pub opening: Balances,
+    pub opening_bids: Balances,
+    pub cleanup: bool,
+    pub forward_complete: bool,
+    pub recovery: bool,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CleanupRetry {
+    pub scope: String,
+    pub liquidity: Vec<(Decimal, Decimal)>,
+    pub eligible: bool,
+    pub submitted: u8,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Model5 {
+    pub previous_model: u32,
+    pub previous_run: Option<String>,
+    pub announced: bool,
+    pub opening_cash: Decimal,
+    pub opening_completed: u64,
+    pub opening_failed: u64,
+    pub opening_unobservable: u64,
+    pub cash_change: Decimal,
+    pub recovery_proceeds: Decimal,
+    pub adjusted_closed_profit: Decimal,
+    pub retries: BTreeMap<u32, CleanupRetry>,
+    pub eligibility: BTreeMap<String, (bool, u64)>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -48,6 +82,8 @@ pub struct Account {
     pub shadow: Shadow,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_guard: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model5: Option<Model5>,
 }
 impl Account {
     pub fn new(latency_ms: u64, cfg: &Config, usdc: u32) -> Self {
@@ -63,6 +99,7 @@ impl Account {
             realized_usdc: Decimal::ZERO,
             shadow: Shadow::default(),
             entry_guard: None,
+            model5: None,
         }
     }
     fn log(&self, out: &mut Vec<Value>, event: &str, at: u64, data: Value) {
@@ -107,6 +144,22 @@ impl Account {
         out: &mut Vec<Value>,
         model: u32,
     ) -> Result<()> {
+        if model >= 5 {
+            if self.model5.is_none() {
+                self.upgrade(5, None, u.usdc);
+            }
+            let plan = quantity::pooled_plan(
+                r,
+                start,
+                &self.balances,
+                books,
+                u,
+                cfg,
+                now,
+                Some(&self.shadow),
+            )?;
+            return self.start_plan(r, episode, plan, books, u, cfg, now, out);
+        }
         ensure!(
             self.attempt.is_none() && self.paused.is_none(),
             "account busy"
@@ -138,6 +191,7 @@ impl Account {
             unwind: None,
             pending: None,
             tainted: false,
+            sizing: None,
         });
         self.log(
             out,
@@ -190,6 +244,25 @@ impl Account {
                     model,
                 ) {
                     Ok(f) => {
+                        if model >= 5 && a.sizing.as_ref().is_some_and(|s| s.cleanup) {
+                            if let Ok((scope, liquidity)) = quantity::cleanup_liquidity(
+                                p.order.edge,
+                                &books[p.order.edge.market],
+                                &self.shadow,
+                                cfg,
+                                at,
+                            ) {
+                                let retry = self
+                                    .model5
+                                    .as_mut()
+                                    .unwrap()
+                                    .retries
+                                    .entry(p.order.edge.from(u))
+                                    .or_default();
+                                retry.scope = scope;
+                                retry.liquidity = liquidity;
+                            }
+                        }
                         self.log(
                             out,
                             "arrived",
@@ -230,6 +303,19 @@ impl Account {
                     a.done.push(e);
                 }
                 self.log(out,"confirmed",at,json!({"order":p.order,"fill":f,"holdings":a.holdings,"processing_lag_ns":now-at}));
+            }
+            if model >= 5 && a.sizing.is_some() {
+                let sizing = a.sizing.as_mut().unwrap();
+                if !sizing.cleanup {
+                    if !full {
+                        sizing.cleanup = true;
+                    } else {
+                        a.next += 1;
+                    }
+                }
+                self.attempt = Some(a);
+                self.continue_model5(now, books, u, cfg, out)?;
+                continue;
             }
             if a.unwind.is_some() && (!full || p.unobservable) {
                 self.attempt = Some(a);
@@ -358,9 +444,338 @@ impl Account {
         self.log(out,"attempt_ended",now,json!({"route":a.route,"status":status,"duration_ns":now-a.started_ns,"cash_change_usdc":pnl,"included_in_performance":!a.tainted,"holdings":a.holdings,"balances":self.balances,"paused":self.paused}));
     }
     pub fn interrupt(&mut self, why: &str) {
-        if self.attempt.is_some() {
+        if self
+            .attempt
+            .as_ref()
+            .is_some_and(|a| a.pending.is_some() || !a.sizing.as_ref().is_some_and(|s| s.cleanup))
+        {
             self.paused = Some(format!("unresolved: {why}"));
         }
+    }
+
+    pub fn upgrade(&mut self, previous_model: u32, previous_run: Option<String>, usdc: u32) {
+        if self.model5.is_some() {
+            return;
+        }
+        self.model5 = Some(Model5 {
+            previous_model,
+            previous_run,
+            announced: false,
+            opening_cash: amount(&self.balances, usdc),
+            opening_completed: self.completed,
+            opening_failed: self.failed,
+            opening_unobservable: self.unobservable,
+            cash_change: Decimal::ZERO,
+            recovery_proceeds: Decimal::ZERO,
+            adjusted_closed_profit: Decimal::ZERO,
+            retries: BTreeMap::new(),
+            eligibility: BTreeMap::new(),
+        });
+        if self.attempt.is_none()
+            && self.unobservable == 0
+            && matches!(
+                self.paused.as_deref(),
+                Some("unwound" | "unwind_unavailable" | "unwind_incomplete")
+            )
+        {
+            self.paused = None;
+        }
+        self.entry_guard = None;
+    }
+
+    pub fn start_plan(
+        &mut self,
+        r: &Route,
+        episode: u64,
+        plan: quantity::LivePlan,
+        books: &[Book],
+        u: &Universe,
+        cfg: &Config,
+        now: u64,
+        out: &mut Vec<Value>,
+    ) -> Result<()> {
+        ensure!(
+            self.attempt.is_none() && self.paused.is_none(),
+            "account busy"
+        );
+        let mut bids = Balances::new();
+        for (&t, &q) in &plan.opening {
+            ensure!(
+                amount(&self.balances, t) >= q,
+                "insufficient planned inventory"
+            );
+            if t != u.usdc && q > Decimal::ZERO {
+                let e = quantity::direct_sell(t, u)
+                    .ok_or_else(|| anyhow::anyhow!("missing opening inventory market"))?;
+                let top = books[e.market]
+                    .top(now, cfg)
+                    .ok_or_else(|| anyhow::anyhow!("missing opening inventory mark"))?;
+                bids.insert(t, top.levels[0][0].px);
+            }
+        }
+        for (&t, &q) in &plan.opening {
+            add(&mut self.balances, t, -q);
+        }
+        self.tried.insert(r.id.clone(), episode);
+        self.model5.as_mut().unwrap().retries.clear();
+        self.attempt = Some(Attempt {
+            route: r.id.clone(),
+            start: plan.estimate.start,
+            started_ns: now,
+            holdings: plan.opening.clone(),
+            forward: plan.orders.iter().map(|o| o.edge).collect(),
+            done: Vec::new(),
+            next: 0,
+            unwind: None,
+            pending: None,
+            tainted: false,
+            sizing: Some(Sizing {
+                orders: plan.orders,
+                opening: plan.opening.clone(),
+                opening_bids: bids,
+                cleanup: false,
+                forward_complete: false,
+                recovery: false,
+            }),
+        });
+        self.log(out,"reserved",now,json!({"route":r.id,"amount":plan.estimate.start,"opening":plan.opening,"estimate":plan.estimate,"free_usdc":amount(&self.balances,u.usdc)}));
+        self.continue_model5(now, books, u, cfg, out)
+    }
+
+    /// Runs only on admitted events/deadlines. Known inventory waits for liquidity;
+    /// unresolved arrivals retain their reservation and never enter this path.
+    pub fn maintain_model5(
+        &mut self,
+        now: u64,
+        books: &[Book],
+        u: &Universe,
+        cfg: &Config,
+        out: &mut Vec<Value>,
+    ) -> Result<()> {
+        if self.model5.is_none() {
+            self.upgrade(5, None, u.usdc);
+        }
+        if !self.model5.as_ref().unwrap().announced {
+            self.log(out,"paper_model_transition",now,json!({"model":5,"facts":self.model5,"balances":self.balances,"paused":self.paused,"pending":self.attempt,"funding_added":"0"}));
+            self.model5.as_mut().unwrap().announced = true;
+        }
+        if self.paused.is_some() {
+            return Ok(());
+        }
+        if self.attempt.is_none() {
+            let mark = quantity::mark_sublots(&self.balances, books, u, cfg, now);
+            if !mark.all_dust {
+                let holdings: Balances = self
+                    .balances
+                    .iter()
+                    .filter(|(t, q)| **t != u.usdc && **q > Decimal::ZERO)
+                    .map(|(&t, &q)| (t, q))
+                    .collect();
+                for (&t, &q) in &holdings {
+                    add(&mut self.balances, t, -q);
+                }
+                self.attempt = Some(Attempt {
+                    route: "inherited_inventory_cleanup".into(),
+                    start: Decimal::ZERO,
+                    started_ns: now,
+                    holdings: holdings.clone(),
+                    forward: Vec::new(),
+                    done: Vec::new(),
+                    next: 0,
+                    unwind: None,
+                    pending: None,
+                    tainted: false,
+                    sizing: Some(Sizing {
+                        orders: Vec::new(),
+                        opening: holdings,
+                        opening_bids: Balances::new(),
+                        cleanup: true,
+                        forward_complete: false,
+                        recovery: true,
+                    }),
+                });
+                self.log(
+                    out,
+                    "cleanup_started",
+                    now,
+                    json!({"inventory":mark,"inherited":true}),
+                );
+            } else {
+                let guard = if mark.indicative_usdc.is_none() {
+                    Some("residual_mark_unavailable")
+                } else if !cfg
+                    .amounts_usdc
+                    .iter()
+                    .any(|q| *q <= amount(&self.balances, u.usdc))
+                {
+                    Some("insufficient_usdc")
+                } else {
+                    None
+                }
+                .map(str::to_owned);
+                if self.entry_guard != guard {
+                    self.entry_guard = guard;
+                    self.log(
+                        out,
+                        "entry_guard",
+                        now,
+                        json!({"reason":self.entry_guard,"inventory":mark}),
+                    );
+                }
+            }
+        }
+        if self
+            .attempt
+            .as_ref()
+            .is_some_and(|a| a.pending.is_none() && a.sizing.is_some())
+        {
+            self.continue_model5(now, books, u, cfg, out)?;
+        }
+        Ok(())
+    }
+
+    fn continue_model5(
+        &mut self,
+        now: u64,
+        books: &[Book],
+        u: &Universe,
+        cfg: &Config,
+        out: &mut Vec<Value>,
+    ) -> Result<()> {
+        let a = self.attempt.as_ref().unwrap();
+        let s = a.sizing.as_ref().unwrap();
+        if !s.cleanup && a.next < s.orders.len() {
+            let planned = &s.orders[a.next];
+            match quantity::reprice_planned(
+                planned,
+                amount(&a.holdings, planned.edge.from(u)),
+                &books[planned.edge.market],
+                &self.shadow,
+                u,
+                cfg,
+                now,
+            ) {
+                Ok(order) => {
+                    self.submit(order, now, out);
+                    return Ok(());
+                }
+                Err(e) => self.log(
+                    out,
+                    "order_rejected",
+                    now,
+                    json!({"edge":planned.edge,"reason":e.to_string(),"next":"cleanup"}),
+                ),
+            }
+        }
+        let a = self.attempt.as_mut().unwrap();
+        let s = a.sizing.as_mut().unwrap();
+        if !s.cleanup {
+            s.forward_complete = a.next == s.orders.len();
+            s.cleanup = true;
+            let data = json!({"route":a.route,"forward_complete":s.forward_complete,"holdings":a.holdings});
+            self.log(out, "cleanup_started", now, data);
+        }
+        let a = self.attempt.as_ref().unwrap();
+        let mark = quantity::mark_sublots(&a.holdings, books, u, cfg, now);
+        if mark.all_dust {
+            self.finish_model5(now, u, out, mark);
+            return Ok(());
+        }
+        let mut tokens: Vec<_> = a
+            .holdings
+            .iter()
+            .filter(|(t, q)| **t != u.usdc && **q >= Decimal::new(1, u.tokens[t].sz_decimals))
+            .map(|(&t, &q)| (t, q))
+            .collect();
+        tokens.sort_by(|(ta, qa), (tb, qb)| {
+            let value = |t, q| {
+                quantity::direct_sell(t, u)
+                    .and_then(|e| books[e.market].top(now, cfg))
+                    .map(|b| q * b.levels[0][0].px)
+                    .unwrap_or_default()
+            };
+            value(*tb, *qb).cmp(&value(*ta, *qa)).then(ta.cmp(tb))
+        });
+        for (token, qty) in tokens {
+            let Some(e) = quantity::direct_sell(token, u) else {
+                continue;
+            };
+            let view = quantity::cleanup_liquidity(e, &books[e.market], &self.shadow, cfg, now);
+            let retry = self
+                .model5
+                .as_mut()
+                .unwrap()
+                .retries
+                .entry(token)
+                .or_default();
+            let Ok((scope, liquidity)) = view else {
+                retry.eligible = false;
+                continue;
+            };
+            if !retry.eligible || retry.scope != scope || retry.liquidity != liquidity {
+                retry.submitted = 0;
+                retry.scope = scope;
+                retry.liquidity = liquidity;
+            }
+            retry.eligible = true;
+            if retry.submitted >= 2 {
+                continue;
+            }
+            if let Ok(order) =
+                quantity::prepare_cleanup(e, qty, &books[e.market], &self.shadow, u, cfg, now)
+            {
+                retry.submitted += 1;
+                let count = retry.submitted;
+                self.log(out,"residual_cleanup",now,json!({"purpose":"FrontendMarket","reduce_only":false,"token":token,"remaining":qty,"quantity":order.qty,"limit":order.limit,"submission_in_opportunity":count}));
+                self.submit(order, now, out);
+                return Ok(());
+            }
+        }
+        if self.entry_guard.as_deref() != Some("cleanup_waiting_liquidity") {
+            self.entry_guard = Some("cleanup_waiting_liquidity".into());
+            self.log(out, "cleanup_waiting", now, json!({"inventory":mark}));
+        }
+        Ok(())
+    }
+
+    fn finish_model5(
+        &mut self,
+        now: u64,
+        u: &Universe,
+        out: &mut Vec<Value>,
+        mark: quantity::InventoryMark,
+    ) {
+        let a = self.attempt.take().unwrap();
+        let s = a.sizing.unwrap();
+        let cash = amount(&a.holdings, u.usdc) - a.start;
+        let debit: Decimal = s
+            .opening_bids
+            .iter()
+            .map(|(&t, &bid)| {
+                (amount(&s.opening, t) - amount(&a.holdings, t)).max(Decimal::ZERO) * bid
+            })
+            .sum();
+        for (&t, &q) in &a.holdings {
+            add(&mut self.balances, t, q);
+        }
+        let m = self.model5.as_mut().unwrap();
+        m.cash_change += cash;
+        if s.recovery {
+            m.recovery_proceeds += cash;
+        } else {
+            m.adjusted_closed_profit += cash - debit;
+            self.realized_usdc += cash;
+            if s.forward_complete {
+                self.completed += 1;
+            } else {
+                self.failed += 1;
+            }
+        }
+        self.entry_guard = mark
+            .indicative_usdc
+            .is_none()
+            .then(|| "residual_mark_unavailable".into());
+        self.log(out,"attempt_ended",now,json!({"route":a.route,"status":if s.recovery {"recovery_completed"} else if s.forward_complete {"completed"} else {"cleaned"},"duration_ns":now.saturating_sub(a.started_ns),"cash_change_usdc":cash,"recovery_proceeds_usdc":if s.recovery {cash} else {Decimal::ZERO},"adjusted_closed_profit_usdc":if s.recovery {None} else {Some(cash-debit)},"opening_inventory_debit":debit,"included_in_performance":!s.recovery,"holdings":a.holdings,"balances":self.balances,"inventory":mark,"paused":self.paused}));
     }
 
     pub fn check_dust(
@@ -478,6 +893,18 @@ impl Account {
         self.balances = balances(&self.balances)?;
         if let Some(a) = &mut self.attempt {
             a.holdings = balances(&a.holdings)?;
+            if let Some(s) = &mut a.sizing {
+                s.opening = balances(&s.opening)?;
+                s.opening_bids = balances(&s.opening_bids)?;
+                for o in &mut s.orders {
+                    edge(&mut o.edge)?;
+                }
+                // Waiting cleanup has no missing order outcome. Its elapsed time
+                // restarts at this segment's clock origin; prior durations stay recorded.
+                if s.cleanup && a.pending.is_none() {
+                    a.started_ns = 0;
+                }
+            }
             for e in a
                 .forward
                 .iter_mut()
@@ -494,6 +921,14 @@ impl Account {
             }
         }
         self.shadow.remap(&markets)?;
+        if let Some(m) = &mut self.model5 {
+            m.retries = m
+                .retries
+                .iter()
+                .map(|(&t, r)| Ok((check_token(t)?, r.clone())))
+                .collect::<Result<_>>()?;
+            m.eligibility.clear();
+        }
         self.tried.clear(); // Eligibility episodes belong to the previous observation segment.
                             // Old models could end an unobservable attempt without a pause. Its
                             // apparent cash is not reconciled evidence of an actual zero fill.

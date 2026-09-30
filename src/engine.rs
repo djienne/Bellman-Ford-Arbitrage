@@ -456,6 +456,119 @@ impl Engine {
         }
         // Decide after state processing, using only books already admitted to this owner.
         for a in &mut self.accounts {
+            if self.model_version >= 5 {
+                if self.connected {
+                    a.maintain_model5(
+                        self.now,
+                        &self.books,
+                        &self.universe,
+                        &self.config,
+                        &mut events,
+                    )?;
+                }
+                // Health/price failures close eligibility even during cleanup.
+                // Usually no route is positive: avoid allocating sizing work then.
+                if let Some(m) = &mut a.model5 {
+                    for (r, s) in self.routes.iter().zip(&self.states) {
+                        if let Some(state) = m.eligibility.get_mut(&r.id).filter(|v| v.0) {
+                            if !self.connected || s.net_bps.is_none_or(|v| v <= 0.0) {
+                                state.0 = false;
+                                events.push(json!({"type":"account_eligibility_ended","at_ns":self.now,"scenario_each_way_ms":a.latency_ms,"route":r.id,"episode":state.1,"censored":s.net_bps.is_none()}));
+                            }
+                        }
+                    }
+                }
+                if self.reconcile.is_some_and(|(l, _)| l == a.latency_ms) {
+                    events.push(json!({"type":"dust_reconciliation","at_ns":self.now,"scenario_each_way_ms":a.latency_ms,"data":{"accepted":false,"reason":"model5_uses_automatic_confirmed_cleanup","paused":a.paused}}));
+                    self.reconcile = None;
+                }
+                if !self.connected
+                    || a.paused.is_some()
+                    || a.attempt.is_some()
+                    || a.entry_guard.is_some()
+                {
+                    continue;
+                }
+                let mut choices = Vec::new();
+                for (r, s) in self.routes.iter().zip(&self.states) {
+                    let forced = self.diagnostic.as_ref().is_some_and(|d| {
+                        d.route == r.id && self.now >= d.after_ns && !a.tried.contains_key(&r.id)
+                    });
+                    if !forced && (self.diagnostic.is_some() || s.net_bps.is_none_or(|v| v <= 0.0))
+                    {
+                        continue;
+                    }
+                    let amounts = self
+                        .diagnostic
+                        .as_ref()
+                        .filter(|_| forced)
+                        .map(|d| vec![d.amount])
+                        .unwrap_or_else(|| self.config.amounts_usdc.clone());
+                    let mut plans = Vec::new();
+                    if forced || (self.diagnostic.is_none() && s.net_bps.is_some_and(|v| v > 0.0)) {
+                        for start in amounts {
+                            if start > quantity::amount(&a.balances, self.universe.usdc) {
+                                continue;
+                            }
+                            if let Ok(p) = quantity::pooled_plan(
+                                r,
+                                start,
+                                &a.balances,
+                                &self.books,
+                                &self.universe,
+                                &self.config,
+                                self.now,
+                                Some(&a.shadow),
+                            ) {
+                                if forced || p.estimate.bps > self.config.min_profit_bps {
+                                    plans.push(p);
+                                }
+                            }
+                        }
+                    }
+                    let eligible = !plans.is_empty();
+                    let state = a
+                        .model5
+                        .as_mut()
+                        .unwrap()
+                        .eligibility
+                        .entry(r.id.clone())
+                        .or_default();
+                    if eligible && !state.0 {
+                        state.1 += 1;
+                        events.push(json!({"type":"account_eligible_episode","at_ns":self.now,"scenario_each_way_ms":a.latency_ms,"route":r.id,"episode":state.1,"estimates":plans.iter().map(|p| &p.estimate).collect::<Vec<_>>()}));
+                    }
+                    if !eligible && state.0 {
+                        events.push(json!({"type":"account_eligibility_ended","at_ns":self.now,"scenario_each_way_ms":a.latency_ms,"route":r.id,"episode":state.1,"censored":s.net_bps.is_none()}));
+                    }
+                    state.0 = eligible;
+                    if forced || a.tried.get(&r.id) != Some(&state.1) {
+                        choices.extend(plans.into_iter().map(|p| (r, state.1, p)));
+                    }
+                }
+                choices.sort_by(|(ra, _, a), (rb, _, b)| {
+                    b.estimate
+                        .profit
+                        .cmp(&a.estimate.profit)
+                        .then(ra.edges.len().cmp(&rb.edges.len()))
+                        .then(ra.id.cmp(&rb.id))
+                        .then(a.estimate.start.cmp(&b.estimate.start))
+                });
+                if !choices.is_empty() {
+                    let (r, epoch, p) = choices.remove(0);
+                    a.start_plan(
+                        r,
+                        epoch,
+                        p,
+                        &self.books,
+                        &self.universe,
+                        &self.config,
+                        self.now,
+                        &mut events,
+                    )?;
+                }
+                continue;
+            }
             if self.model_version >= 3 && self.config.dust_limit_usdc > Decimal::ZERO {
                 let requested = self.reconcile.is_some_and(|(l, _)| l == a.latency_ms);
                 let ready = requested
@@ -679,18 +792,37 @@ impl Engine {
                     });
                     continue;
                 }
-                match quantity::estimate_model(
-                    r,
-                    start,
-                    &self.books,
-                    &self.universe,
-                    &self.config,
-                    self.now,
-                    self.model_version,
-                ) {
+                let estimated = if self.model_version >= 5 {
+                    quantity::pooled_plan(
+                        r,
+                        start,
+                        &BTreeMap::new(),
+                        &self.books,
+                        &self.universe,
+                        &self.config,
+                        self.now,
+                        None,
+                    )
+                    .map(|p| p.estimate)
+                } else {
+                    quantity::estimate_model(
+                        r,
+                        start,
+                        &self.books,
+                        &self.universe,
+                        &self.config,
+                        self.now,
+                        self.model_version,
+                    )
+                };
+                match estimated {
                     Ok(mut e) => {
                         if self.model_version >= 3 {
-                            e.inventory = Some(quantity::mark_inventory(
+                            e.inventory = Some((if self.model_version >= 5 {
+                                quantity::mark_sublots
+                            } else {
+                                quantity::mark_inventory
+                            })(
                                 &e.residual,
                                 &self.books,
                                 &self.universe,
@@ -768,7 +900,7 @@ impl Engine {
             report["inventory_marks"] = json!(self.accounts.iter().map(|a| {
                 let mut holdings = a.balances.clone();
                 if let Some(p) = &a.attempt { for (&t,&q) in &p.holdings { quantity::add(&mut holdings,t,q); } }
-                let mark = quantity::mark_inventory(&holdings,&self.books,&self.universe,&self.config,self.now);
+                let mark = (if self.model_version >= 5 { quantity::mark_sublots } else { quantity::mark_inventory })(&holdings,&self.books,&self.universe,&self.config,self.now);
                 json!({"latency_ms":a.latency_ms,"cash_plus_inventory_change_usdc":mark.indicative_usdc.map(|v|quantity::amount(&holdings,self.universe.usdc)+v-self.config.starting_usdc),"inventory":mark,"open_exposure":a.attempt.is_some() || a.paused.is_some(),"indicative_only":true})
             }).collect::<Vec<_>>());
             for (row, s) in report["route_statistics"]
@@ -788,6 +920,10 @@ impl Engine {
             report["coverage"]["depth_scope"] =
                 "full_l2_traded_side; excludes BBO-only quantity".into();
             report["execution_model_note"] = "local receipt-time proxy; bounded BBO or coherent L2; unknown deeper remainder excluded".into();
+        }
+        if self.model_version >= 5 {
+            report["model_period_accounts"] = json!(self.accounts.iter().map(|a| json!({"latency_ms":a.latency_ms,"period":a.model5,"completed":a.completed-a.model5.as_ref().map(|m|m.opening_completed).unwrap_or(a.completed),"failed":a.failed-a.model5.as_ref().map(|m|m.opening_failed).unwrap_or(a.failed),"unobservable":a.unobservable-a.model5.as_ref().map(|m|m.opening_unobservable).unwrap_or(a.unobservable)})).collect::<Vec<_>>());
+            report["latency_note"] = "100/250/500 ms EACH way are sensitivity assumptions; Tokyo execution timing unverified; observed local processing/queue delays retained".into();
         }
         report
     }

@@ -38,7 +38,9 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub predecessor_run_id: Option<String>,
 }
-fn is_false(v: &bool) -> bool { !*v }
+fn is_false(v: &bool) -> bool {
+    !*v
+}
 #[derive(Serialize, Deserialize)]
 pub struct Record {
     pub input: Input,
@@ -292,8 +294,8 @@ pub fn replay_model(
     model: Option<u32>,
 ) -> Result<Engine> {
     ensure!(
-        model.is_none_or(|m| matches!(m, 3 | 4)),
-        "execution model must be 3 or 4"
+        model.is_none_or(|m| matches!(m, 3..=5)),
+        "execution model must be 3, 4 or 5"
     );
     let alternative = latencies.is_some()
         || quote_ms.is_some()
@@ -306,7 +308,7 @@ pub fn replay_model(
     );
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=4), "unsupported recording format");
+    ensure!(matches!(m.format, 1..=5), "unsupported recording format");
     let mut cfg = m.config;
     if let Some(ms) = quote_ms {
         cfg.quote_age_ms = ms;
@@ -323,14 +325,17 @@ pub fn replay_model(
         m.initial_accounts
     };
     let mut engine = if m.observer_only {
-        ensure!(!alternative && initial.as_ref().is_some_and(Vec::is_empty), "observer tape cannot create paper accounts");
+        ensure!(
+            !alternative && initial.as_ref().is_some_and(Vec::is_empty),
+            "observer tape cannot create paper accounts"
+        );
         Engine::scanner(cfg, m.universe)?
     } else {
         Engine::new(cfg, m.universe, initial)?
     };
     engine.legacy_shadow = m.format == 1 && !alternative;
     engine.model_version = if alternative {
-        model.unwrap_or(4)
+        model.unwrap_or(m.format.max(4))
     } else {
         m.format
     };
@@ -524,7 +529,7 @@ fn last_record(path: &Path) -> Result<Record> {
 pub fn recover(dir: &Path) -> Result<(Universe, Vec<Account>)> {
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=4), "unsupported recovery format");
+    ensure!(matches!(m.format, 1..=5), "unsupported recovery format");
     if m.format >= 3 && dir.join("final.json").exists() {
         let report: Value =
             serde_json::from_reader(BufReader::new(File::open(dir.join("final.json"))?))?;

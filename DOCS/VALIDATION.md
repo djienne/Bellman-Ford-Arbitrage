@@ -249,3 +249,48 @@ The independent Decimal audit consumed **10 raw WebSocket/REST fills**, reconstr
 | Execution journal durable write, 70 records | 3.264 ms | 41.974 ms |
 
 Quota was **1 CPU**, `100000 100000`. Cgroup counters measured **0.591924 CPU seconds over 22.973869 wall seconds**, about **2.58% of one core** after the execution journal opened. A separate startup sample was 18.02% with 5.547 MiB memory; it is not a steady-state average. Session recordings occupied **6,973,232 bytes**. No artificial execution delays or paper deadline samples were introduced. The dedicated continuous paper container and its accounts were not restarted or changed by this retest.
+
+## Paper model 5: sizing and continuous cleanup (30 September 2026 UTC)
+
+Model 5 shares the pure lot-aware planner with live accounting version 2, adds private-shadow estimates and directly sells confirmed whole-lot residuals. A cleanup order may deliberately use a smaller observable chunk. Submitted quantities and limits remain fixed; confirmation is still required before proceeds can be used. Persistent waiting/retry state distinguishes temporary liquidity limits from unknown fills. The default image still rejects live commands; no real orders or credentials were used during this change.
+
+Docker release checks passed **59 checks in the default build** and **78 with the optional live feature**, including the public probe check. New cases cover exact migration cash/token conservation, sub-$10 cleanup, 250/500-ms boundaries, post-arrival quote exclusion, shadow-private estimates, opening-inventory profit adjustment, repeated snapshots, retry-state persistence, coarse lots, missing marks and unresolved cleanup. The existing hot/reference replay check now includes format 5. Saved formats 1–4 verified using `runs/smoke-final/run-1790622687314035991`, `runs/fast-depth-replay-check`, `runs/run-1790631216054513033` and `runs/format4-smoke/run-1790722781878884572`. Their original accounting remains unchanged.
+
+The unchanged hot allocation test ran through the 1-CPU service image: **zero allocations over 200,000 updates**, 210 routes and 29 markets. Two compiled feature variants both measured p50 **401 ns**, with p99 **1,123 / 1,423 ns**; effective quota was `100000 100000`. These are numeric-kernel microbenchmarks, separate from receiver/queue/Decimal processing.
+
+**Historical comparison:** `runs/model5-validation/failure-window/` contains 8,090 original records from monotonic 46,780–46,860 seconds of `runs/run-1790736569099900517`, surrounding the **15:49 UTC** failures. It adds one explicitly synthetic Open for warm-up and otherwise preserves original receipt, processing and completion clocks. Both comparisons start independent accounts; neither changes the real recording or running accounts. Model 4 reproduces the three recorded balances and pauses exactly. The final model-5 counterfactual gives:
+
+| Each-way delay | Completed / failed closed attempts | Cash change from closed attempts | Inventory-adjusted closed profit | Remaining limitation |
+|---|---:|---:|---:|---|
+| 100 ms | 2 / 2 | +0.92637798 USDC | +0.852714537400 USDC | Next HYPE sell unobservable; reservation/exposure retained |
+| 250 ms | 10 / 18 | +18.64344486 USDC | +18.140119848460 USDC | Account available, only sub-lot residuals |
+| 500 ms | 2 / 2 | +1.51397031 USDC | +1.440294897400 USDC | Next HYPE sell unobservable; reservation/exposure retained |
+
+The primary account's final cash is **10,018.64344486 USDC**, with 0.006639 HYPE, 0.0091300 USDE and 0.0070772 USDT0. These revised outcomes are **counterfactual**, with additional simulated timer dispatch delay assumed zero and observed input-processing delays preserved. They demonstrate continued cleanup/execution in the model; they do not establish venue execution or arbitrage profitability. The two unknown outcomes demonstrate the remaining limitation of sparse public depth rather than a recoverable dust pause.
+
+The eight saved real orders from `review/2026-09-30-residual-fix/independent-ledger.json` were recalculated using model fees and atomic round-up. Modeled fees exceed the observed totals by **one atomic unit per order**, except the three-fill USDT0 sell, which differs by **two units**. Results are in `runs/model5-validation/actual-fee-comparison.json`. Aggregation and per-fill rounding differ; this small sample does not establish a universal venue rule.
+
+The bounded fast-only calibration mode ran locally for 30 seconds at **1 CPU**: 56 depth snapshots, median receipt gap **538.375 ms**, receipt-to-parse p50/p99 **13.044/79.357 μs**, and two application-ping RTTs of **241.571/282.173 ms**. It records reconnects and effective quota. This validates the probe, **not Tokyo timing**; `deployment_region` is null. The calibration command in the README is prepared for a future `ap-northeast-1` host. The latency grid remains 100/250/500 ms each way; public RTT cannot substitute for committed-order confirmation latency.
+
+**Final public smoke:** `runs/model5-smoke-final/run-1790805197145583230`, a 600-second run with public connections from **21:53:17.716 to 22:03:17.014 UTC**. The controlled reconnect produced a **1.517-second** Close-to-Open gap. The durable terminal checkpoint and exact replay passed, including replay with the final deployment binary. It recorded **37,016 frames**, no malformed books and **26,829,479 journal bytes** (25.59 MiB). No positive episodes or entries occurred; the three separate smoke accounts stayed at 10,000 USDC. There are no execution-timer samples in this quiet run.
+
+| Smoke measurement | p50 | p99 |
+|---|---:|---:|
+| Receipt → decision | 0.801 ms | 2.961 ms |
+| Queue age | 0.768 ms | 2.910 ms |
+
+There were 210 structural routes, 180 dormant, and 30 with prices. Including startup and reconnect time, those 30 had **98.11% fresh-price coverage** and **80.48% full-L2 traded-side coverage**. BBO-only availability is not included in the latter. CPU counters measured **8.638551 CPU seconds over 586.83 wall seconds**, or **1.47% of one core**, with quota `100000 100000`; sampled memory was 8.94 MiB. These measurements include concurrent local validation work and do not predict Tokyo latency.
+
+**Cutover and actual simulated cleanup:** model-4 `runs/run-1790736569099900517` ended cleanly at **22:04:23.426 UTC**, terminal sequence **6,319,385**. The checkpoint matched its manifest and durable terminal record. Startup exposed two unbuffered JSON reads on the Windows bind mount; replacing them with the standard buffered reader removed the delay. No current pointer or account was changed during that stalled startup. The resulting recording gap, ending at **22:07:41.424 UTC**, is excluded from healthy coverage.
+
+Model-5 `runs/run-1790806059942522210` continues the **same `bbo-ioc-v4-2026-09-30` funding epoch**. An independent comparison verified unchanged opening balances, cumulative counters, historical cash, reservations and shadow depletion, with **zero added funding**. A fixed prefix through **22:08:34.892 UTC** verified exactly. A separate Decimal audit reconstructed all **five confirmed cleanup fills**, checked quantities, fees, limits and arrival/confirmation causality, and matched every final token balance. All three accounts resumed availability, with no pending/unknown orders or whole-lot inventory:
+
+| Each-way delay | Available USDC | HYPE residual | USDE residual | Inherited-inventory recovery proceeds |
+|---|---:|---:|---:|---:|
+| 100 ms | 10,001.30894260 | 0.001936 | 0.0055480 | 3.72291230 USDC |
+| 250 ms | 10,043.36592563 | 0.001957 | 0.0032540 | 1,043.17003963 USDC |
+| 500 ms | 9,997.02249411 | 0.001936 | 0.00656435 | 2.72344225 USDC |
+
+Both token lots are **0.01**. Fresh residual marks were **0.18147209 / 0.18108728 / 0.18248805 USDC**, respectively, about 127 ms old. All model-5 closed-cycle profit and counter deltas were **zero** in this prefix. The recovered capital includes market movement while model 4 retained inventory; it is not model-5 arbitrage profit. Cumulative old outcomes remain intact. The 10 cleanup deadline samples had p50/p99 dispatch lag **0.793/1.794 ms**. A separate post-start window used **1.029285 CPU seconds over 65.49 seconds** (1.57% of one core); sampled memory was 11.11 MiB. The prefix contains 2,412,932 journal bytes. The public screener remains running with the default unsigned build, 1 CPU and no real orders.
+
+Execution smoke image: `sha256:920f7150db77da5e8a4cfbb3095234f876e63cca2a86b170f5487ff7cca9ac2b`. Deployment image after the buffered-startup fix: `sha256:3acebb70f49fdfe729c460fd0e0c0e922727c4f97b3762c0d4b51af0e1bd3055`. Deployed source hashes match the checkout. Raw comparison, fee, CPU, migration and replay artifacts are under `runs/model5-validation/`; compact results are in `review/2026-09-30-paper-model5/validation.json`. The daily review now distinguishes automatic known-inventory cleanup from unresolved execution and keeps model periods and scenarios separate.

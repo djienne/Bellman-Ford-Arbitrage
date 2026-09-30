@@ -298,7 +298,6 @@ fn prepare_minimum(
 
 /// The observed frontend exception is restricted to selling confirmed spot
 /// inventory to USDC. Ordinary paper and live orders keep their minimum.
-#[cfg(feature = "live")]
 pub fn prepare_residual(
     e: Edge,
     input: Decimal,
@@ -321,7 +320,6 @@ pub fn prepare_residual(
     )
 }
 
-#[cfg(feature = "live")]
 #[derive(Clone, Debug, Serialize)]
 pub struct LivePlan {
     pub orders: Vec<Order>,
@@ -331,7 +329,6 @@ pub struct LivePlan {
     pub estimate: Estimate,
 }
 
-#[cfg(feature = "live")]
 fn buy_to_receive(net: Decimal, fee: Decimal, dp: u32, atomic_dp: u32) -> Result<Decimal> {
     ensure!(
         fee >= Decimal::ZERO && fee < Decimal::ONE,
@@ -349,7 +346,6 @@ fn buy_to_receive(net: Decimal, fee: Decimal, dp: u32, atomic_dp: u32) -> Result
 
 /// Cold-path, fixed-book plan: keep the feasible downstream lots, then remove
 /// unnecessary intermediate purchases. No search over hypothetical extra trades.
-#[cfg(feature = "live")]
 pub fn live_plan(
     route: &Route,
     start: Decimal,
@@ -359,11 +355,31 @@ pub fn live_plan(
     cfg: &Config,
     now: u64,
 ) -> Result<LivePlan> {
+    pooled_plan(route, start, carry, books, u, cfg, now, None)
+}
+
+/// Estimates consume a private shadow copy, never the account's liquidity.
+pub fn pooled_plan(
+    route: &Route,
+    start: Decimal,
+    carry: &Balances,
+    books: &[Book],
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+    shadow: Option<&Shadow>,
+) -> Result<LivePlan> {
     let edges = route.funded_edges(u).context("not_usdc_funded")?;
+    let carry: Balances = carry
+        .iter()
+        .filter(|(t, _)| shadow.is_none() || edges.iter().any(|e| e.from(u) == **t))
+        .map(|(&t, &q)| (t, q))
+        .collect();
     let mut opening = carry.clone();
     opening.insert(u.usdc, start);
     let mut balances = opening.clone();
     let mut orders = Vec::new();
+    let mut hypothetical = shadow.cloned();
     for e in &edges {
         let o = prepare_model(
             *e,
@@ -375,7 +391,7 @@ pub fn live_plan(
             cfg.slippage_bps,
             4,
         )?;
-        let f = execute_model(&o, &books[e.market], u, cfg, now, None, 4)?;
+        let f = execute_model(&o, &books[e.market], u, cfg, now, hypothetical.as_mut(), 4)?;
         ensure!(f.qty == o.qty, "insufficient_depth");
         apply_fill(&mut balances, *e, &f, u)?;
         orders.push(o);
@@ -391,7 +407,7 @@ pub fn live_plan(
         } else {
             next.qty
         };
-        let net = (needed - amount(carry, e.to(u))).max(Decimal::ZERO);
+        let net = (needed - amount(&carry, e.to(u))).max(Decimal::ZERO);
         let token = &u.tokens[&e.to(u)];
         let qty = buy_to_receive(
             net,
@@ -410,6 +426,7 @@ pub fn live_plan(
         }
     }
     balances = opening.clone();
+    hypothetical = shadow.cloned();
     let mut fees = Vec::new();
     let mut sources = Vec::new();
     for o in &mut orders {
@@ -421,7 +438,15 @@ pub fn live_plan(
         if !o.edge.buy {
             o.qty = floor(o.budget, u.tokens[&o.edge.from(u)].sz_decimals);
         }
-        let f = execute_model(o, &books[o.edge.market], u, cfg, now, None, 4)?;
+        let f = execute_model(
+            o,
+            &books[o.edge.market],
+            u,
+            cfg,
+            now,
+            hypothetical.as_mut(),
+            4,
+        )?;
         ensure!(f.qty == o.qty, "insufficient_depth");
         apply_fill(&mut balances, o.edge, &f, u)?;
         fees.push((f.fee_token, f.fee));
@@ -624,6 +649,136 @@ pub fn mark_inventory(
         result.marks.push(serde_json::json!({"token":token,"quantity":qty,"indicative_usdc":value,"source":mark.map(|(m,_)|&m.coin),"exchange_ms":mark.map(|(_,b)|b.exchange_ms),"receipt_age_ns":mark.map(|(_,b)|now.saturating_sub(b.receipt_ns)),"untradeable_dust":dust}));
     }
     result
+}
+
+pub fn direct_sell(token: u32, u: &Universe) -> Option<Edge> {
+    u.markets
+        .iter()
+        .position(|m| m.base == token && m.quote == u.usdc)
+        .map(|market| Edge { market, buy: false })
+}
+
+/// Model 5 dust is an actual sub-lot, independently of its dollar mark.
+pub fn mark_sublots(
+    balances: &Balances,
+    books: &[Book],
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+) -> InventoryMark {
+    let mut mark = mark_inventory(balances, books, u, cfg, now);
+    mark.all_dust = true;
+    for row in &mut mark.marks {
+        let token = row["token"].as_u64().unwrap() as u32;
+        let lot = Decimal::new(1, u.tokens[&token].sz_decimals);
+        let sub_lot = amount(balances, token) < lot;
+        row["lot_size"] = serde_json::json!(lot);
+        row["untradeable_dust"] = sub_lot.into();
+        mark.all_dust &= sub_lot;
+    }
+    mark
+}
+
+/// Observable liquidity identity excludes timestamps: an unchanged snapshot is
+/// not a new cleanup opportunity. The caller accounts for its own depletion.
+pub fn cleanup_liquidity(
+    e: Edge,
+    book: &Book,
+    shadow: &Shadow,
+    cfg: &Config,
+    now: u64,
+) -> Result<(String, Vec<(Decimal, Decimal)>)> {
+    let v = book.execution_side(e.buy, now, cfg, None, 5)?;
+    ensure!(!v.rows.is_empty(), "no_liquidity");
+    Ok((
+        v.scope.into(),
+        v.rows
+            .iter()
+            .map(|l| (l.px, shadow.available(e, l)))
+            .collect(),
+    ))
+}
+
+/// A deliberate confirmed-inventory chunk. Bound the limit by observed depth,
+/// so a top-only partial fill has no unknown worse-price remainder.
+pub fn prepare_cleanup(
+    e: Edge,
+    input: Decimal,
+    book: &Book,
+    shadow: &Shadow,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+) -> Result<Order> {
+    ensure!(!e.buy && e.to(u) == u.usdc, "cleanup must sell to USDC");
+    let v = book.execution_side(false, now, cfg, None, 5)?;
+    let top = v.rows.first().context("no_liquidity")?;
+    let dp = u.tokens[&e.from(u)].sz_decimals;
+    let mut limit = limit_price(
+        top.px * (Decimal::ONE - cfg.unwind_slippage_bps / Decimal::from(10000)),
+        dp,
+        false,
+    );
+    if v.scope == "top" || v.rows.len() >= if cfg.l2_fast { 5 } else { 20 } {
+        limit = limit.max(v.rows.last().unwrap().px);
+    }
+    let available: Decimal = v
+        .rows
+        .iter()
+        .filter(|l| l.px >= limit)
+        .map(|l| floor(shadow.available(e, l), dp))
+        .sum();
+    let qty = floor(input.min(available), dp);
+    ensure!(qty > Decimal::ZERO, "below_lot_or_no_liquidity");
+    Ok(Order {
+        edge: e,
+        qty,
+        limit,
+        budget: input,
+        source: source(&v, e, u, now, 5),
+    })
+}
+
+pub fn reprice_planned(
+    planned: &Order,
+    input: Decimal,
+    book: &Book,
+    shadow: &Shadow,
+    u: &Universe,
+    cfg: &Config,
+    now: u64,
+) -> Result<Order> {
+    let e = planned.edge;
+    let dp = u.tokens[&u.markets[e.market].base].sz_decimals;
+    let qty = if e.buy { planned.qty } else { floor(input, dp) };
+    ensure!(qty >= planned.qty, "planned_funding_shortfall");
+    let v = book.execution_side(e.buy, now, cfg, None, 5)?;
+    let mut left = qty;
+    let mut marginal = Decimal::ZERO;
+    for l in v.rows {
+        left -= left.min(floor(shadow.available(e, l), dp));
+        marginal = l.px;
+        if left == Decimal::ZERO {
+            break;
+        }
+    }
+    ensure!(left == Decimal::ZERO, "insufficient_depth");
+    let factor = Decimal::ONE
+        + if e.buy {
+            cfg.slippage_bps
+        } else {
+            -cfg.slippage_bps
+        } / Decimal::from(10000);
+    let limit = limit_price(marginal * factor, dp, e.buy);
+    ensure!(qty * limit >= Decimal::from(10), "minimum_notional");
+    ensure!(!e.buy || qty * limit <= input, "planned_funding_shortfall");
+    Ok(Order {
+        edge: e,
+        qty,
+        limit,
+        budget: input,
+        source: source(&v, e, u, now, 5),
+    })
 }
 pub fn estimate(
     route: &Route,

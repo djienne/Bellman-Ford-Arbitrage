@@ -1,0 +1,546 @@
+{
+  "model": 5,
+  "funding_epoch": "bbo-ioc-v4-2026-09-30",
+  "new_production_funding": "0",
+  "deployed_image": "sha256:3acebb70f49fdfe729c460fd0e0c0e922727c4f97b3762c0d4b51af0e1bd3055",
+  "tests": {
+    "default_release": 59,
+    "live_feature_release": 78,
+    "historical_formats_verified": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "smoke_format5_verified": true,
+    "migrated_format5_prefix_verified": true,
+    "default_live_commands_rejected": true
+  },
+  "migration": {
+    "old": "/app/runs/run-1790736569099900517",
+    "new": "/app/runs/run-1790806059942522210",
+    "epoch": "bbo-ioc-v4-2026-09-30",
+    "preserved": [
+      "balances",
+      "counters",
+      "cash_history",
+      "shadow",
+      "pending"
+    ],
+    "new_funding": "0",
+    "validated": true
+  },
+  "smoke": {
+    "run": "/app/runs/model5-smoke-final/run-1790805197145583230",
+    "utc_start": "2026-09-30T21:53:17.715701+00:00",
+    "utc_end": "2026-09-30T22:03:17.013671+00:00",
+    "seconds": 599.998643427,
+    "frames": 37016,
+    "journal_bytes": 26829479,
+    "volume_gib_per_day": 3.598121657124706,
+    "price_coverage_30_percent": 98.1131942194726,
+    "l2_coverage_30_percent": 80.48148650396375,
+    "receipt_to_decision": {
+      "max_ns": 8484542,
+      "mean_ns": 911619,
+      "p50_us": 801,
+      "p95_us": 1861,
+      "p99_us": 2961,
+      "percentile_resolution_us": 1,
+      "samples": 37016
+    },
+    "queue_age": {
+      "max_ns": 8465604,
+      "mean_ns": 863783,
+      "p50_us": 768,
+      "p95_us": 1815,
+      "p99_us": 2910,
+      "percentile_resolution_us": 1,
+      "samples": 37016
+    },
+    "timer_lag": {
+      "max_ns": 0,
+      "mean_ns": 0,
+      "p50_us": 0,
+      "p95_us": 0,
+      "p99_us": 0,
+      "percentile_resolution_us": 1,
+      "samples": 0
+    },
+    "cpu": {
+      "seconds": 586.8299999999872,
+      "cpu_seconds": 8.638551,
+      "one_core_percent": 1.4720704462962337
+    },
+    "counts": {
+      "paper_model_transition": 3,
+      "account_checkpoint": 1
+    },
+    "accounts": [
+      {
+        "latency_ms": 100,
+        "balances": {
+          "0": "10000"
+        },
+        "completed": 0,
+        "failed": 0,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      },
+      {
+        "latency_ms": 250,
+        "balances": {
+          "0": "10000"
+        },
+        "completed": 0,
+        "failed": 0,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      },
+      {
+        "latency_ms": 500,
+        "balances": {
+          "0": "10000"
+        },
+        "completed": 0,
+        "failed": 0,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      }
+    ],
+    "inventory_marks": [
+      {
+        "cash_plus_inventory_change_usdc": "0",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0",
+          "marks": []
+        },
+        "latency_ms": 100,
+        "open_exposure": false
+      },
+      {
+        "cash_plus_inventory_change_usdc": "0",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0",
+          "marks": []
+        },
+        "latency_ms": 250,
+        "open_exposure": false
+      },
+      {
+        "cash_plus_inventory_change_usdc": "0",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0",
+          "marks": []
+        },
+        "latency_ms": 500,
+        "open_exposure": false
+      }
+    ]
+  },
+  "cutover": {
+    "run": "/app/runs/model5-validation/continuous-prefix",
+    "utc_start": "2026-09-30T22:07:41.423983+00:00",
+    "utc_end": "2026-09-30T22:08:34.892212+00:00",
+    "seconds": 54.949689809,
+    "frames": 3387,
+    "journal_bytes": 2412932,
+    "volume_gib_per_day": 3.5334073687506544,
+    "price_coverage_30_percent": 92.54022476502627,
+    "l2_coverage_30_percent": 75.84508585877514,
+    "receipt_to_decision": {
+      "max_ns": 5598965,
+      "mean_ns": 987408,
+      "p50_us": 914,
+      "p95_us": 1988,
+      "p99_us": 2842,
+      "percentile_resolution_us": 1,
+      "samples": 3387
+    },
+    "queue_age": {
+      "max_ns": 5296637,
+      "mean_ns": 928838,
+      "p50_us": 874,
+      "p95_us": 1933,
+      "p99_us": 2791,
+      "percentile_resolution_us": 1,
+      "samples": 3387
+    },
+    "timer_lag": {
+      "max_ns": 1794839,
+      "mean_ns": 876200,
+      "p50_us": 793,
+      "p95_us": 1794,
+      "p99_us": 1794,
+      "percentile_resolution_us": 1,
+      "samples": 10
+    },
+    "cpu": {
+      "seconds": 65.48999999999069,
+      "cpu_seconds": 1.029285,
+      "one_core_percent": 1.57166743014223
+    },
+    "counts": {
+      "paper_model_transition": 3,
+      "cleanup_started": 3,
+      "cleanup_waiting": 3,
+      "residual_cleanup": 5,
+      "submitted": 5,
+      "arrived": 5,
+      "confirmed": 5,
+      "attempt_ended": 3
+    },
+    "accounts": [
+      {
+        "latency_ms": 100,
+        "balances": {
+          "0": "10001.30894260",
+          "150": "0.001936",
+          "235": "0.0055480"
+        },
+        "completed": 1,
+        "failed": 1,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      },
+      {
+        "latency_ms": 250,
+        "balances": {
+          "0": "10043.36592563",
+          "150": "0.001957",
+          "235": "0.0032540"
+        },
+        "completed": 0,
+        "failed": 1,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      },
+      {
+        "latency_ms": 500,
+        "balances": {
+          "0": "9997.02249411",
+          "150": "0.001936",
+          "235": "0.00656435"
+        },
+        "completed": 0,
+        "failed": 2,
+        "unobservable": 0,
+        "paused": null,
+        "entry_guard": null,
+        "attempt": null
+      }
+    ],
+    "inventory_marks": [
+      {
+        "cash_plus_inventory_change_usdc": "1.490414692280",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0.181472092280",
+          "marks": [
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.175926256",
+              "lot_size": "0.01",
+              "quantity": "0.001936",
+              "receipt_age_ns": 126526642,
+              "source": "@107",
+              "token": 150,
+              "untradeable_dust": true
+            },
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.005545836280",
+              "lot_size": "0.01",
+              "quantity": "0.0055480",
+              "receipt_age_ns": 126523005,
+              "source": "@150",
+              "token": 235,
+              "untradeable_dust": true
+            }
+          ]
+        },
+        "latency_ms": 100,
+        "open_exposure": false
+      },
+      {
+        "cash_plus_inventory_change_usdc": "43.547012907940",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0.181087277940",
+          "marks": [
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.177834547",
+              "lot_size": "0.01",
+              "quantity": "0.001957",
+              "receipt_age_ns": 126526642,
+              "source": "@107",
+              "token": 150,
+              "untradeable_dust": true
+            },
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.003252730940",
+              "lot_size": "0.01",
+              "quantity": "0.0032540",
+              "receipt_age_ns": 126523005,
+              "source": "@150",
+              "token": 235,
+              "untradeable_dust": true
+            }
+          ]
+        },
+        "latency_ms": 250,
+        "open_exposure": false
+      },
+      {
+        "cash_plus_inventory_change_usdc": "-2.7950178440965",
+        "indicative_only": true,
+        "inventory": {
+          "all_dust": true,
+          "indicative_usdc": "0.1824880459035",
+          "marks": [
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.175926256",
+              "lot_size": "0.01",
+              "quantity": "0.001936",
+              "receipt_age_ns": 126526642,
+              "source": "@107",
+              "token": 150,
+              "untradeable_dust": true
+            },
+            {
+              "exchange_ms": 1790806114742,
+              "indicative_usdc": "0.0065617899035",
+              "lot_size": "0.01",
+              "quantity": "0.00656435",
+              "receipt_age_ns": 126523005,
+              "source": "@150",
+              "token": 235,
+              "untradeable_dust": true
+            }
+          ]
+        },
+        "latency_ms": 500,
+        "open_exposure": false
+      }
+    ]
+  },
+  "counterfactual_failure_window": {
+    "4": {
+      "frames": 6463,
+      "positive_episodes": 44,
+      "model_version": 4,
+      "counterfactual": true,
+      "additional_timer_processing_assumption_ns": 0,
+      "accounts": [
+        {
+          "latency_ms": 100,
+          "balances": {
+            "0": "9997.58603030",
+            "150": "0.031936",
+            "235": "1.0055480"
+          },
+          "paused": "unwound",
+          "entry_guard": "inventory_not_confirmed_dust",
+          "completed": 1,
+          "failed": 1,
+          "unobservable": 0,
+          "realized_usdc": "-2.41396970"
+        },
+        {
+          "latency_ms": 250,
+          "balances": {
+            "0": "9000.1958860",
+            "150": "11.481957",
+            "235": "1.0032540"
+          },
+          "paused": "unwind_unavailable",
+          "entry_guard": "inventory_not_confirmed_dust",
+          "completed": 0,
+          "failed": 1,
+          "unobservable": 0,
+          "realized_usdc": "-999.8041140"
+        },
+        {
+          "latency_ms": 500,
+          "balances": {
+            "0": "9994.29905186",
+            "150": "0.031936",
+            "235": "0.00656435"
+          },
+          "paused": "unwound",
+          "entry_guard": "inventory_not_confirmed_dust",
+          "completed": 0,
+          "failed": 2,
+          "unobservable": 0,
+          "realized_usdc": "-5.70094814"
+        }
+      ]
+    },
+    "5": {
+      "frames": 6463,
+      "positive_episodes": 44,
+      "model_version": 5,
+      "counterfactual": true,
+      "additional_timer_processing_assumption_ns": 0,
+      "accounts": [
+        {
+          "latency_ms": 100,
+          "balances": {
+            "0": "9000.92637798",
+            "150": "0.000000",
+            "235": "0.0000000",
+            "268": "0.0050692"
+          },
+          "paused": "unresolved: unobservable execution",
+          "entry_guard": null,
+          "completed": 2,
+          "failed": 2,
+          "unobservable": 1,
+          "realized_usdc": "0.92637798",
+          "unresolved_confirmed_holdings": {
+            "0": "0.3299968",
+            "150": "11.483116",
+            "235": "0.2006608"
+          }
+        },
+        {
+          "latency_ms": 250,
+          "balances": {
+            "0": "10018.64344486",
+            "150": "0.006639",
+            "235": "0.0091300",
+            "268": "0.0070772"
+          },
+          "paused": null,
+          "entry_guard": null,
+          "completed": 10,
+          "failed": 18,
+          "unobservable": 0,
+          "realized_usdc": "18.64344486"
+        },
+        {
+          "latency_ms": 500,
+          "balances": {
+            "0": "9001.51397031",
+            "150": "0.000000",
+            "235": "0.0000000",
+            "268": "0.0021694"
+          },
+          "paused": "unresolved: unobservable execution",
+          "entry_guard": null,
+          "completed": 2,
+          "failed": 2,
+          "unobservable": 1,
+          "realized_usdc": "1.51397031",
+          "unresolved_confirmed_holdings": {
+            "0": "0.9499906",
+            "150": "11.453137",
+            "235": "1.5413910"
+          }
+        }
+      ]
+    }
+  },
+  "actual_fee_comparison": {
+    "source": "review/2026-09-30-residual-fix/independent-ledger.json",
+    "rows": [
+      {
+        "market": "@107",
+        "buy": true,
+        "qty": "0.58",
+        "fee_token": 150,
+        "modeled": "0.00040600",
+        "actual": "0.00040599",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@207",
+        "buy": false,
+        "qty": "0.58",
+        "fee_token": 268,
+        "modeled": "0.03493103",
+        "actual": "0.03493102",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@166",
+        "buy": false,
+        "qty": "49.86",
+        "fee_token": 0,
+        "modeled": "0.00697596",
+        "actual": "0.00697594",
+        "difference": "2E-8"
+      },
+      {
+        "market": "@150",
+        "buy": true,
+        "qty": "49.84",
+        "fee_token": 235,
+        "modeled": "0.00697760",
+        "actual": "0.00697759",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@255",
+        "buy": true,
+        "qty": "0.58",
+        "fee_token": 150,
+        "modeled": "0.00040600",
+        "actual": "0.00040599",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@107",
+        "buy": false,
+        "qty": "0.57",
+        "fee_token": 0,
+        "modeled": "0.03431959",
+        "actual": "0.03431958",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@107",
+        "buy": false,
+        "qty": "0.01",
+        "fee_token": 0,
+        "modeled": "0.00060211",
+        "actual": "0.0006021",
+        "difference": "1E-8"
+      },
+      {
+        "market": "@150",
+        "buy": false,
+        "qty": "0.01",
+        "fee_token": 0,
+        "modeled": "0.00000140",
+        "actual": "0.00000139",
+        "difference": "1E-8"
+      }
+    ],
+    "note": "Model aggregates one IOC at saved VWAP; actual fees can be rounded per fill. This small sample does not establish a universal venue rounding rule."
+  },
+  "raw_evidence": "runs/model5-validation",
+  "tokyo_execution_timing_verified": false,
+  "note": "Public paper validation only. Recovery cash is not arbitrage profit. Historical comparison uses separate counterfactual accounts; unknown fills remain reserved. No real orders."
+}

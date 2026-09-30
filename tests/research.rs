@@ -1699,7 +1699,7 @@ fn processing_delay_is_added_to_submission_and_replayed() {
 
 #[test]
 fn hot_pipeline_matches_reference_and_replays() {
-    for model in [2, 4] {
+    for model in [2, 4, 5] {
         let cfg = config();
         let u = universe(&cfg);
         let mut live = Engine::new(cfg.clone(), u.clone(), None).unwrap();
@@ -1783,6 +1783,382 @@ fn hot_pipeline_matches_reference_and_replays() {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+fn cleanup_engine(qty: &str) -> Engine {
+    let cfg = Config {
+        min_profit_bps: Decimal::from(10000),
+        taker_fee_bps: Decimal::from(7),
+        ..config()
+    };
+    let mut u = universe(&cfg);
+    u.tokens.get_mut(&1).unwrap().sz_decimals = 2;
+    let mut a = bellman_arb::paper::Account::new(250, &cfg, 0);
+    a.balances.insert(0, Decimal::from(9000));
+    a.balances.insert(1, dec(qty).unwrap());
+    a.completed = 1;
+    a.failed = 2;
+    a.realized_usdc = Decimal::from(-1000);
+    a.paused = Some("unwind_unavailable".into());
+    a.upgrade(4, Some("old-model4".into()), 0);
+    let mut e = Engine::new(cfg, u, Some(vec![a])).unwrap();
+    e.model_version = 5;
+    step(&mut e, 0, InputKind::Open);
+    e
+}
+
+#[test]
+fn model5_migration_cleanup_conserves_cash_and_has_no_new_profit() {
+    let mut e = cleanup_engine("0.02880303");
+    let events = step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.02", "86.1", "1", 1),
+        },
+    );
+    assert!(events.iter().any(|v| v["type"] == "residual_cleanup"));
+    let p = e.accounts[0]
+        .attempt
+        .as_ref()
+        .unwrap()
+        .pending
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(p.order.qty, dec("0.02").unwrap());
+    assert_eq!(p.order.limit, Decimal::from(86));
+    assert_eq!(e.accounts[0].balances[&0], Decimal::from(9000));
+    step(&mut e, 249_000_001, InputKind::Clock);
+    assert!(
+        !e.accounts[0]
+            .attempt
+            .as_ref()
+            .unwrap()
+            .pending
+            .as_ref()
+            .unwrap()
+            .arrived
+    );
+    step(&mut e, 250_000_001, InputKind::Clock);
+    assert_eq!(e.accounts[0].balances[&0], Decimal::from(9000));
+    // A later quote cannot improve the arrival fill.
+    step(
+        &mut e,
+        251_000_001,
+        InputKind::Frame {
+            text: bbo(0, "90", "1", "91", "1", 2),
+        },
+    );
+    step(&mut e, 500_000_001, InputKind::Clock);
+    let a = &e.accounts[0];
+    assert!(a.attempt.is_none() && a.paused.is_none() && a.entry_guard.is_none());
+    assert_eq!(a.balances[&1], dec("0.00880303").unwrap());
+    let cash = dec("1.72").unwrap() * (Decimal::ONE - dec("0.0007").unwrap());
+    assert_eq!(a.balances[&0], Decimal::from(9000) + cash);
+    let m = a.model5.as_ref().unwrap();
+    assert_eq!(m.recovery_proceeds, cash);
+    assert_eq!(m.adjusted_closed_profit, Decimal::ZERO);
+    assert_eq!(
+        (a.completed, a.failed, a.realized_usdc),
+        (1, 2, Decimal::from(-1000))
+    );
+}
+
+#[test]
+fn model5_chunks_wait_for_replenishment_and_restart_preserves_retry() {
+    let mut e = cleanup_engine("0.05880303");
+    step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.02", "86.1", "1", 1),
+        },
+    );
+    step(&mut e, 250_000_001, InputKind::Clock);
+    step(&mut e, 500_000_001, InputKind::Clock);
+    assert!(e.accounts[0].attempt.as_ref().unwrap().pending.is_none());
+    let before = serde_json::to_value(&e.accounts[0].shadow).unwrap();
+    for at in [600_000_000, 700_000_000] {
+        let ev = step(
+            &mut e,
+            at,
+            InputKind::Frame {
+                text: bbo(0, "86", "0.02", "86.1", "1", at),
+            },
+        );
+        assert!(!ev.iter().any(|v| v["type"] == "submitted"));
+    }
+    assert_eq!(before, serde_json::to_value(&e.accounts[0].shadow).unwrap());
+    e.accounts[0].interrupt("restart");
+    assert!(e.accounts[0].paused.is_none());
+    let bytes = serde_json::to_vec(&e.accounts[0]).unwrap();
+    let saved: bellman_arb::paper::Account = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bytes, serde_json::to_vec(&saved).unwrap());
+    let ev = step(
+        &mut e,
+        800_000_000,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.05", "86.1", "1", 800_000_000),
+        },
+    );
+    assert!(ev.iter().any(|v| v["type"] == "submitted"));
+    assert_eq!(
+        e.accounts[0]
+            .attempt
+            .as_ref()
+            .unwrap()
+            .pending
+            .as_ref()
+            .unwrap()
+            .order
+            .qty,
+        dec("0.03").unwrap()
+    );
+    step(&mut e, 1_050_000_000, InputKind::Clock);
+    step(&mut e, 1_300_000_000, InputKind::Clock);
+    assert_eq!(e.accounts[0].balances[&1], dec("0.00880303").unwrap());
+    assert!(e.accounts[0].attempt.is_none());
+}
+
+#[test]
+fn model5_unknown_cleanup_stays_unresolved_and_marks_only_guard_entry() {
+    let mut e = cleanup_engine("0.00880303");
+    assert_eq!(
+        e.accounts[0].entry_guard.as_deref(),
+        Some("residual_mark_unavailable")
+    );
+    step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "1", "86.1", "1", 1),
+        },
+    );
+    assert!(e.accounts[0].entry_guard.is_none());
+    let mut e = cleanup_engine("0.02880303");
+    step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "1", "86.1", "1", 1),
+        },
+    );
+    step(
+        &mut e,
+        100_000_000,
+        InputKind::Close {
+            reason: "gap".into(),
+        },
+    );
+    step(&mut e, 250_000_001, InputKind::Clock);
+    step(&mut e, 500_000_001, InputKind::Clock);
+    assert_eq!(e.accounts[0].unobservable, 1);
+    let held = e.accounts[0].attempt.as_ref().unwrap().holdings.clone();
+    step(&mut e, 600_000_000, InputKind::Open);
+    step(
+        &mut e,
+        600_000_001,
+        InputKind::Frame {
+            text: bbo(0, "86", "100", "86.1", "100", 2),
+        },
+    );
+    assert!(e.accounts[0]
+        .paused
+        .as_ref()
+        .unwrap()
+        .starts_with("unresolved"));
+    assert_eq!(held, e.accounts[0].attempt.as_ref().unwrap().holdings);
+    assert_eq!(e.accounts[0].balances[&0], Decimal::from(9000));
+}
+
+#[test]
+fn model5_pooled_estimates_are_shadow_private_and_charge_carried_inventory() {
+    let mut e = ready();
+    e.accounts[0].attempt = None;
+    let r = e
+        .routes
+        .iter()
+        .find(|r| r.funded_edges(&e.universe).unwrap()[0].market == 0)
+        .unwrap();
+    let carry = BTreeMap::from([(1, dec("0.09").unwrap())]);
+    let shadow = serde_json::to_value(&e.accounts[0].shadow).unwrap();
+    let p = quantity::pooled_plan(
+        r,
+        Decimal::from(100),
+        &carry,
+        &e.books,
+        &e.universe,
+        &e.config,
+        e.now,
+        Some(&e.accounts[0].shadow),
+    )
+    .unwrap();
+    assert!(p.opening_inventory_debit > Decimal::ZERO);
+    assert_eq!(p.estimate.profit, p.cash_profit - p.opening_inventory_debit);
+    assert_eq!(shadow, serde_json::to_value(&e.accounts[0].shadow).unwrap());
+    let first = &p.orders[0];
+    let row = &e.books[first.edge.market].depth.as_ref().unwrap().levels[1][0];
+    e.accounts[0].shadow.consume(first.edge, row.px, row.sz);
+    assert!(quantity::pooled_plan(
+        r,
+        Decimal::from(100),
+        &carry,
+        &e.books,
+        &e.universe,
+        &e.config,
+        e.now,
+        Some(&e.accounts[0].shadow)
+    )
+    .is_err());
+    // A funding shortfall cannot silently shrink the planned next leg.
+    assert!(quantity::reprice_planned(
+        &p.orders[1],
+        Decimal::ZERO,
+        &e.books[p.orders[1].edge.market],
+        &e.accounts[0].shadow,
+        &e.universe,
+        &e.config,
+        e.now
+    )
+    .is_err());
+}
+
+#[test]
+fn model5_retry_budget_requires_changed_liquidity_and_coarse_lots_stay_bounded() {
+    let mut e = cleanup_engine("0.05880303");
+    step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.01", "86.1", "1", 1),
+        },
+    );
+    step(&mut e, 250_000_001, InputKind::Clock);
+    step(&mut e, 500_000_001, InputKind::Clock);
+    // Exhaust a persisted opportunity allowance; identical frames cannot rearm it.
+    let retry = e.accounts[0]
+        .model5
+        .as_mut()
+        .unwrap()
+        .retries
+        .get_mut(&1)
+        .unwrap();
+    retry.submitted = 2;
+    let events = step(
+        &mut e,
+        600_000_000,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.01", "86.1", "1", 2),
+        },
+    );
+    assert!(!events.iter().any(|v| v["type"] == "submitted"));
+    assert_eq!(
+        e.accounts[0].model5.as_ref().unwrap().retries[&1].submitted,
+        2
+    );
+    let events = step(
+        &mut e,
+        700_000_000,
+        InputKind::Frame {
+            text: bbo(0, "86", "0.02", "86.1", "1", 3),
+        },
+    );
+    assert!(events.iter().any(|v| v["type"] == "submitted"));
+    assert_eq!(
+        e.accounts[0].model5.as_ref().unwrap().retries[&1].submitted,
+        1
+    );
+    for dp in [0, 2, 5] {
+        e.universe.tokens.get_mut(&1).unwrap().sz_decimals = dp;
+        let lot = Decimal::new(1, dp);
+        let balances = BTreeMap::from([(1, lot * dec("0.9").unwrap())]);
+        assert!(
+            quantity::mark_sublots(&balances, &e.books, &e.universe, &e.config, e.now).all_dust
+        );
+        let balances = BTreeMap::from([(1, lot)]);
+        assert!(
+            !quantity::mark_sublots(&balances, &e.books, &e.universe, &e.config, e.now).all_dust
+        );
+    }
+}
+
+#[test]
+fn model5_zero_fill_confirms_before_retry_and_pending_restart_never_refunds() {
+    let mut e = cleanup_engine("0.02880303");
+    e.config.quote_age_ms = 1000;
+    e.config.depth_age_ms = 1000;
+    step(
+        &mut e,
+        1,
+        InputKind::Frame {
+            text: bbo(0, "86", "1", "86.1", "1", 1),
+        },
+    );
+    step(
+        &mut e,
+        249_000_001,
+        InputKind::Frame {
+            text: bbo(0, "85", "1", "86.1", "1", 2),
+        },
+    );
+    step(&mut e, 250_000_001, InputKind::Clock);
+    let p = e.accounts[0]
+        .attempt
+        .as_ref()
+        .unwrap()
+        .pending
+        .as_ref()
+        .unwrap();
+    assert_eq!(p.fill.as_ref().unwrap().qty, Decimal::ZERO);
+    assert_eq!(
+        p.fill.as_ref().unwrap().source.as_ref().unwrap().scope,
+        "zero"
+    );
+    assert_eq!(p.submitted_ns, 1);
+    step(&mut e, 499_000_001, InputKind::Clock);
+    assert_eq!(
+        e.accounts[0]
+            .attempt
+            .as_ref()
+            .unwrap()
+            .pending
+            .as_ref()
+            .unwrap()
+            .submitted_ns,
+        1
+    );
+    step(&mut e, 500_000_001, InputKind::Clock);
+    assert_eq!(
+        e.accounts[0]
+            .attempt
+            .as_ref()
+            .unwrap()
+            .pending
+            .as_ref()
+            .unwrap()
+            .submitted_ns,
+        500_000_001
+    );
+    step(&mut e, 750_000_001, InputKind::Clock);
+    let mut saved: bellman_arb::paper::Account =
+        serde_json::from_value(serde_json::to_value(&e.accounts[0]).unwrap()).unwrap();
+    let before = serde_json::to_value(&saved.shadow).unwrap();
+    saved.remap(&e.universe, &e.universe).unwrap();
+    saved.interrupt("restart recording gap");
+    saved.upgrade(5, Some("same-epoch".into()), 0);
+    assert!(saved.deadline().is_none());
+    assert_eq!(saved.balances[&0], Decimal::from(9000));
+    assert_eq!(
+        saved.attempt.as_ref().unwrap().holdings[&1],
+        dec("0.02880303").unwrap()
+    );
+    assert_eq!(before, serde_json::to_value(&saved.shadow).unwrap());
+    // The uninterrupted owner can release the independently confirmed proceeds.
+    step(&mut e, 1_000_000_001, InputKind::Clock);
+    assert!(e.accounts[0].attempt.is_none());
+    assert_eq!(e.accounts[0].balances[&1], dec("0.00880303").unwrap());
+    assert_eq!(e.accounts[0].balances[&0], dec("9001.69881").unwrap());
 }
 
 #[test]
