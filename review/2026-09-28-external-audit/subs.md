@@ -2,6 +2,8 @@
 
 # Subscriptions
 
+Archived API reference from the 28 September 2026 external review. The copied text below is historical; use the linked official page for current API details and the project README for implemented behavior.
+
 This page describes subscribing to data streams using the WebSocket API.
 
 ### Subscription messages

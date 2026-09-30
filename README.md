@@ -1,10 +1,10 @@
 # Bellman-Ford Arbitrage Screener (Hyperliquid spot)
 
-This is an **arbitrage opportunity screener and paper trader** for Hyperliquid spot markets, built on the **Bellman–Ford** view of currency arbitrage: tokens are graph nodes, every market is a pair of directed edges weighted by `−ln(rate × (1 − fee))`, and a round trip that ends with more than it started with is a **negative-weight cycle**. It watches the public WebSocket feed, finds fee-positive conversion cycles of 3–6 trades (e.g. `USDC → HYPE → USDT0 → USDC`), and simulates executing them against recorded order books with realistic latency, depth, lot sizes and fees.
+This is an **arbitrage opportunity screener and paper trader** for Hyperliquid spot markets, built on the **Bellman–Ford** view of currency arbitrage: tokens are graph nodes, every market is a pair of directed edges weighted by `−ln(rate × (1 − fee))`, and a round trip that ends with more than it started with is a **negative-weight cycle**. It watches the public WebSocket feed, finds fee-positive conversion cycles of 3–6 trades (e.g. `USDC → HYPE → USDT0 → USDC`), and simulates execution using observed books, assumed latency, lot sizes and modeled fees.
 
 **Paper by default.** Continuous collection needs no credentials and sends no orders. An optional live feature provides explicitly armed, bounded spot execution tests and finite live sessions. Production live trading is disabled; the continuous service remains the paper screener.
 
-> **Status (30 Sep 2026 local time):** format 4 is running in independent epoch `bbo-ioc-v4-2026-09-30` with three unpaused 10,000-USDC accounts. The old paused accounts remain preserved. The first model-3 coverage review found 1,275 positive fee-net episodes, three entry-eligibility episodes and five attempts, with no completed full cycles. The format-4 ten-minute smoke and historical replays passed. See [current validation](DOCS/VALIDATION.md#execution-observability-format-4-and-independent-epoch) and [observation review](DOCS/OBSERVATION_REVIEW.md). Counterfactual results are separate from observed paper outcomes; live fill profitability remains unverified.
+> **Validated 30 Sep 2026:** paper recording format 4 and optional live accounting version 2. Both real test triangles and sub-$10 residual cleanup passed; 71 release checks and historical replays passed. Continuous paper collection remains separate from those forced tests. See [validation](DOCS/VALIDATION.md#residual-sizing-and-immediate-real-cleanup-30-september-2026) and the dated [observation review](DOCS/OBSERVATION_REVIEW.md). Profitable live arbitrage has not been demonstrated.
 
 ## How it works
 
@@ -60,7 +60,7 @@ docker compose run --rm screener replay runs/run-... --latency-ms 100,250,500 --
 docker compose run --rm screener replay runs/run-... --execution-model 4
 ```
 
-`--verify` re-checks every recorded engine event under the original assumptions. Other replay options run on fresh, independent accounts and never modify the evidence.
+`--verify` re-checks every recorded engine event under the original assumptions. Latency, freshness, execution-model or forced-entry overrides use fresh, independent accounts and cannot be combined with `--verify`. Observer-only live tapes permit exact replay only; replay never modifies the evidence.
 
 To exercise execution on negative-edge data, force a route (take a real ID from `discover`; the one below is illustrative):
 
@@ -68,7 +68,7 @@ To exercise execution on negative-edge data, force a route (take a real ID from 
 docker compose run --rm screener replay runs/run-... --force-route '1B>2S>3S' --force-amount-usdc 100 --force-after-ns 0
 ```
 
-Forced replay uses separate accounts, one attempt per scenario, normal entries off and profit filters bypassed. Its report is a diagnostic and **not** an arbitrage-performance claim. `--verify` and live forced entries are rejected.
+Forced replay uses separate accounts, one attempt per scenario, normal entries off and profit filters bypassed. Its report is a diagnostic and **not** an arbitrage-performance claim. These `--force-*` flags are replay-only; explicitly armed real validation uses the separate `live validate` command below.
 
 ## Configuration (`config.toml`)
 
@@ -84,17 +84,17 @@ Forced replay uses separate accounts, one attempt per scenario, normal entries o
 | Quote and depth max age | 1 s, independently |
 | Socket watchdog | 30 s |
 | Recording rotation / cap | 1 h or 256 MiB / 50 GiB (stop, never delete) |
-| Dust budget | 10 USDC per account, never spendable |
+| Paper residual-mark budget | 10 USDC per account; marks are not spendable cash |
 
 Decimal quantities and bps are strings. Set `l2_fast = false` for the slower twenty-level feed; see the [feed comparison](DOCS/DEPTH_FEED_CHECK.md).
 
 ## Paper-trading model
 
-- **Order flow.** Each order fixes quantity and limit at submission and fills against the levels available at arrival, after the assumed outbound delay. Only confirmed net proceeds fund the next leg. A triangle needs at least 1.5 s of assumed network delay plus real processing delay. One timer per earliest deadline drives execution; observations processed after a deadline cannot improve that fill.
+- **Order flow.** Each order fixes quantity and limit at submission and fills against the levels available at arrival, after the assumed outbound delay. Only confirmed net proceeds fund the next leg. At the primary 250-ms-each-way setting, a triangle needs at least 1.5 s of assumed network delay plus measured processing delay. One timer per earliest deadline drives execution; observations processed after a deadline cannot improve that fill.
 - **Books.** Actual bids/asks and all received levels, with separate BBO/L2 clocks. A fresh traded-side quote outside the fixed IOC limit supports a zero fill. Fresh BBO can support an entire order at the best price; otherwise execution requires coherent traded-side L2. Changed BBO prices/quantities are never stitched into old deeper levels. Unknown deeper remainders are **unobservable**, while a partial fill is observable when the fixed limit excludes all unseen worse prices. Opposite-side updates alone do not invalidate an order. A fresh BBO does not refresh L2; stale data, crosses and disconnects invalidate evidence.
-- **Fees.** Fractional per market: 7 bps base spot taker, with the documented 80% reduction for quote-token pairs inferred from token identities. Unverified account, staking and referral discounts are unapplied. `discover` shows each rate's provenance. The fee is charged on the received token, rounded up. Lot size, price precision and the 10-quote-token minimum notional apply to every leg.
+- **Fees.** Fractional per market: 7 bps base spot taker, with the documented 80% reduction for quote-token pairs inferred from token identities. Unverified account, staking and referral discounts are unapplied. `discover` shows each rate's provenance. Paper fills and pre-trade estimates model fees in the received token, rounded up to its atomic unit; real fills use the venue's actual fee amount and token. Lot size, price precision and the 10-quote-token minimum apply to every paper leg.
 - **Shadow liquidity.** Each latency scenario keeps its own finite depth shared across routes. Fills consume it; an identical snapshot does not refill it, and levels beyond a truncated snapshot cannot manufacture replenishment. It persists across restarts. The scenarios are alternatives: **never sum their profit**.
-- **Failures and unwinds.** A partial or rejected leg abandons the route and unwinds through the completed legs under the same latency rules. Confirmed, untradeable dust worth at most the dust budget (fresh direct-USDC bid marks) does not block new entries; anything larger stays blocked. An unobservable fill keeps its reservation and pending order rather than returning hypothetical cash, and no failed attempt resets to starting funds.
+- **Failures and unwinds.** A partial or rejected leg abandons the route and unwinds through the completed legs under the same latency rules. Confirmed residuals below modeled lot/minimum-notional constraints may remain within the paper residual budget, using fresh direct-USDC bid marks. This legacy paper allowance differs from the live sub-lot rule below. An unobservable fill keeps its reservation and pending order rather than returning hypothetical cash, and no failed attempt resets to starting funds.
 
 This is a local receipt-time model, not a reconstruction of the matching engine. Public books reveal neither queue priority nor true executable latency.
 
@@ -132,8 +132,8 @@ Review coverage after 24 hours, and accumulate at least seven **healthy** record
 | `src/journal.rs` | recording, checkpoints, recovery and replay |
 | `src/config.rs`, `config.toml` | configuration |
 | `tests/` | research checks and the zero-allocation hot benchmark |
-| `DOCS/` | [`PRD.md`](DOCS/PRD.md) (spec), [`VALIDATION.md`](DOCS/VALIDATION.md) (measurements), [`DEPTH_FEED_CHECK.md`](DOCS/DEPTH_FEED_CHECK.md) |
-| `review/` | historical review evidence, including the original Binance prototype (its code has been removed) |
+| `DOCS/` | [`PRD.md`](DOCS/PRD.md) (current spec), [`VALIDATION.md`](DOCS/VALIDATION.md) (dated measurements), historical plans and supplied research references |
+| `review/` | frozen review evidence and version-specific diagnostics, including the archived Binance prototype; these are not current runtime instructions |
 
 The executable keeps its historical name, `bellman-arb`.
 
@@ -150,14 +150,6 @@ docker compose build --build-arg FEATURES=live screener
 docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live check
 .\live_preflight.ps1
 docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live validate --residual-check --session spot-residual-ID --allow-real-orders
-# The targeted check completes both triangles and immediate residual cleanup.
-# The original comprehensive recovery test is separate:
-.\live_preflight.ps1
-docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live validate --session spot-validation-ID --allow-real-orders
-# Validation deliberately exits after a confirmed first leg to test recovery.
-docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live reconcile --session spot-validation-ID
-.\live_preflight.ps1
-docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live cleanup --session spot-validation-ID --allow-real-orders
 ```
 
 Use a fresh ID once. Reusing it cannot fund another account or repeat validation. Credentials stay local, ignored and mounted read-only; they are absent from the continuous service. These commands operate on **mainnet real money**, even though the chosen subaccount is used for testing. The sibling connector is reference code only; the preflight script only reads its Docker state.
@@ -166,9 +158,9 @@ Live accounting version 2 pools confirmed strategy leftovers, sizes intermediate
 
 The targeted residual check deliberately retains one extra HYPE lot from the second triangle's closing IOC, then immediately sells it through the cleanup path. It does not repeat the earlier interrupted-first-leg test. A failed cleanup blocks further testing. No extra purchases are made just to dispose of sub-lot dust.
 
-Validation permits 50-USDC opening allocations, a 5-USDC session loss stop, 32 signed actions with unwind reserves, two attempts per required triangle and a 30-minute entry deadline. It tests `USDC → HYPE → USDT0 → USDC` and `USDC → USDE → HYPE → USDC`, post-only cancellation, a non-crossing IOC, deliberately lost acknowledgement, and an interrupted first leg followed by explicit cleanup. Forced losses are diagnostic; they are not observed profitable arbitrage. Stops prevent new entries, not guaranteed maximum loss.
+Validation permits 50-USDC opening allocations, a 5-USDC session loss stop, 32 signed actions with cleanup reserves, two attempts per required triangle and a 30-minute entry deadline. Both modes test `USDC → HYPE → USDT0 → USDC` and `USDC → USDE → HYPE → USDC`. Omitting `--residual-check` selects the original comprehensive test: cancellation, zero-fill IOC, lost acknowledgement and a deliberate exit while holding the first leg. Inspect that session with `live reconcile --session ID`, then explicitly invoke `live cleanup --session ID --allow-real-orders` with the same read-only credential mount and a fresh preflight. Forced tests are execution diagnostics, not profitable-arbitrage evidence; the loss stop cannot guarantee final loss.
 
-Real legs use actual confirmed fills, fee tokens and reconciled spot balances, without simulated latency. Unknown orders are reconciled by their original IDs and never resent. Version-2 cleanup permits two submissions per token within a durable 120-second deadline; legacy sessions retain their reverse-path recovery. Confirmed sub-lot residuals remain inventory; marks use fresh direct-USDC bids and are never spendable. Unknown marks or remaining whole lots block new trading. The shared XEMM key may be used only while its live trading is inactive; a per-signer file lock prevents duplicate owners in this project. Foreign orders, fills or unexplained balance changes block new trading.
+Real legs use actual confirmed fills, fee tokens and reconciled spot balances, without simulated latency. Live estimates read `userSpotCrossRate` and the configured market adjustments; fill fees are authoritative. Unknown orders are reconciled by their original IDs and never resent. Version-2 cleanup permits two submissions per token within a durable 120-second deadline; legacy sessions retain their reverse-path recovery. Confirmed sub-lot residuals remain inventory; marks use fresh direct-USDC bids and are never spendable. Unknown marks or remaining whole lots block new trading. The shared XEMM key may be used only while its live trading is inactive; a per-signer file lock prevents duplicate owners in this project. Foreign orders, fills or unexplained balance changes block new trading.
 
 Evidence is separate in `runs/live/<session>/`: durable intents, responses, actual fills, balance checkpoints and an observer-only public/account tape. Its tape can be verified with ordinary `replay --verify`; it cannot create counterfactual paper accounts. Live recovery never advances an old forward route automatically. Storage failure stops inventory orders; only cancellation of this session's resting orders is attempted without a durable intent, leaving recovery explicitly unresolved.
 

@@ -1,5 +1,5 @@
-//! Decimal IOC accounting. Fee model: charged in the received asset, rounded up
-//! to its atomic unit. This conservative paper convention is recorded, not a fill guarantee.
+//! Decimal paper accounting and live sizing. Paper fills and live estimates model
+//! received-asset fees rounded up to an atomic unit; live_client accounts actual fills.
 use crate::{
     book::{Book, ExecutionView, Level, Update},
     config::Config,
@@ -572,7 +572,8 @@ pub struct InventoryMark {
     pub all_dust: bool,
     pub marks: Vec<serde_json::Value>,
 }
-/// Bid marks are indicative, not liquidation proceeds. Unknown books never prove dust.
+/// Indicative bid marks and legacy paper lot/minimum-notional dust classification.
+/// Unknown marks cannot establish eligibility; live version 2 checks sub-lots separately.
 pub fn mark_inventory(
     balances: &Balances,
     books: &[Book],

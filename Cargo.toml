@@ -2,7 +2,7 @@
 name = "bellman-arb"
 version = "0.2.0"
 edition = "2021"
-description = "Hyperliquid spot screener and latency-aware paper trading"
+description = "Hyperliquid spot screener, paper trading and optional bounded live execution"
 
 [features]
 default = []

@@ -1431,8 +1431,8 @@ fn prepare_planned(planned: &Order, input: Decimal, e: &Engine) -> Result<Order>
     order.budget = input;
     Ok(order)
 }
-/// Dust is checked over authorized exits, plus direct-USDC marks. Dormant,
-/// unauthorized markets cannot consume this account's residual holdings.
+/// Bid marks and legacy dust classification over authorized exits and direct-USDC
+/// markets. Runner::mark applies the stricter sub-lot rule for live version 2.
 fn inventory(b: &Balances, allowed: &[Route], e: &Engine) -> quantity::InventoryMark {
     let ids: BTreeSet<_> = allowed
         .iter()

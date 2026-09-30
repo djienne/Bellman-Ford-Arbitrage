@@ -1,4 +1,6 @@
 """Read-only audit of recorded Hyperliquid bbo/l2Book frames (bellman_ford runs).
+Archived 28 September 2026 diagnostic: reads only events-00000.jsonl.
+Not a complete-run or current execution-model audit.
 Usage: python feed_audit.py <run_dir> [max_bytes]
 Time axis = input.process_ns (engine 'now'); freshness stamp = receipt_ns (as engine).
 """

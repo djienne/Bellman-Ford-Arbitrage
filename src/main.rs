@@ -137,7 +137,7 @@ async fn execute(args: &[String]) -> Result<()> {
     }
     anyhow::ensure!(
         matches!(command, "run" | "discover"),
-        "commands: discover, run, replay"
+        "commands: discover, run, replay, live (requires the live build feature)"
     );
     anyhow::ensure!(
         !args.iter().any(|a| a.starts_with("--force-")),
@@ -223,7 +223,7 @@ async fn execute(args: &[String]) -> Result<()> {
         return Ok(());
     }
     if command != "run" {
-        bail!("commands: discover, run, replay")
+        bail!("commands: discover, run, replay, live (requires the live build feature)")
     }
     let mut accounts = None;
     if let Some((old, mut saved)) = prior.filter(|_| !fresh_epoch) {

@@ -2,7 +2,7 @@
 
 28 September 2026. The measured five-second depth cadence is explained by the subscription mode: omitting `fast` is acknowledged by the server as **`fast: false`**. An independent HYPE/USDC connection reproduced the running screener's slow snapshots. Explicit **`fast: true`** returned five levels approximately ten times more often.
 
-**Deployment follow-up:** after the user approved the change, fast mode was enabled on all 29 production markets at approximately 20:32 UTC. The sections below describe the earlier isolated experiment; current deployment evidence is in [VALIDATION.md](VALIDATION.md#fast-depth-deployment).
+**Deployment follow-up:** fast mode was enabled on all 29 subscribed markets at approximately 20:32 UTC that day. The sections below describe the earlier isolated experiment; its deployment evidence is in [VALIDATION.md](VALIDATION.md#fast-depth-deployment).
 
 ## Experiment
 
@@ -24,9 +24,9 @@ All **22 default-mode depth exchange timestamps matched** the running screener. 
 
 This is a short HYPE-only experiment. It establishes the mode difference for this endpoint/sample, not performance across every market or conditions. Fast mode also had **one 4.804-second receipt gap**, despite a maximum 0.690-second gap between its successive exchange timestamps. That indicates delayed delivery/processing in the observed path; this experiment cannot localize that isolated stall to server, network, or host. Fast mode does not guarantee every snapshot arrives within one second. Existing freshness rejection remains necessary.
 
-## Implication
+## Decision implemented after this probe
 
-The next useful application change is to request `fast: true` explicitly and record that choice in configuration/metadata. This trades twenty levels for five. Candidate sizing and paper fills must use only the received five levels and reject insufficient visible liquidity; slow deeper levels must not be silently treated as equally fresh. The shorter cadence should improve opportunities to obtain eligible observations, but actual route coverage and paper results need a subsequent measurement.
+The application was subsequently changed to request `fast: true` explicitly and record that choice. This trades twenty levels for five. Sizing and paper fills use only received levels; older deeper prices cannot supplement a fresh truncated snapshot. Follow-up coverage and paper measurements are in the deployment validation linked above.
 
 **This diagnostic did not change the running feed mode or restart the screener.** It remained connected with zero restarts, using the same container start time, 19:26:57 UTC. No production Rust source or trading configuration was edited. The temporary probe exited successfully and was removed; its evidence remains on disk.
 
@@ -50,4 +50,4 @@ The measured run is `runs/depth-probe-1790626223/`, containing:
 
 Concurrent production data: `runs/run-1790623621537561730/`. The live recorder remained active throughout; comparisons read its durable prefix after a two-second flush allowance.
 
-The current [Hyperliquid subscription documentation](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions) explicitly describes `fast` as a boolean selecting five versus twenty levels. To minimize incremental usage under the shared [public rate limits](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits), the probe used two sequential connections and only two subscriptions on its active connection. Both were acknowledged successfully.
+The [Hyperliquid subscription documentation](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions) checked for this experiment describes `fast` as selecting five versus twenty levels. To minimize incremental usage under the shared [public rate limits](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits), the probe used two sequential connections and only two subscriptions on its active connection. Both were acknowledged successfully.

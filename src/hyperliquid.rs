@@ -1,5 +1,6 @@
-//! Public transport adapted from XEMM SCREENER/src/feeds.rs and hyperliquid.rs,
-//! inspected at 30b3132e5e3c1c5239f84ce349f49ace63ec1951. No account/order API.
+//! Public discovery and WebSocket transport adapted from XEMM SCREENER at
+//! 30b3132e5e3c1c5239f84ce349f49ace63ec1951. The live owner can add account
+//! subscriptions; signing and order submission are handled by live_client.
 use crate::{config::Config, engine::InputKind, market::Universe};
 use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};

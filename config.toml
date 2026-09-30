@@ -1,4 +1,4 @@
-# Public Hyperliquid spot only. Decimal quantities and bps are strings.
+# Hyperliquid spot defaults. Decimal quantities and bps are strings.
 min_cycle_len = 3
 max_cycle_len = 6
 max_cycles = 200000
@@ -6,7 +6,7 @@ starting_usdc = "10000"
 amounts_usdc = ["25", "100", "250", "1000"]
 latency_ms = [100, 250, 500] # EACH way; 250 outbound + 250 confirmation is primary
 min_profit_bps = "5"
-dust_limit_usdc = "10" # Confirmed, untradeable residuals; never spendable cash.
+dust_limit_usdc = "10" # Paper residual-mark budget; live version 2 uses sub-lot limits.
 taker_fee_bps = "7"
 aligned_quote_token_ids = [] # Only verified fee classifications belong here.
 slippage_bps = "2"

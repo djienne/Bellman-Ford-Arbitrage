@@ -1,4 +1,5 @@
-// Diagnostic only: compiled in a throwaway Docker copy of the project.
+// Archived 28 September 2026 diagnostic for that revision's behavior;
+// compiled in a throwaway Docker copy, not part of the maintained test suite.
 include!("/app/tests/research.rs");
 
 fn audit_ready() -> Engine {

@@ -1,6 +1,6 @@
 # Hyperliquid arbitrage prototype: detailed fix plan
 
-Prepared 28 September 2026. Historical planning rationale, retained as review evidence. The user subsequently approved full implementation without an observation gate, and required a dedicated optimized hot path. The implemented contract and operation are now described by [PRD.md](PRD.md), [../README.md](../README.md), and [VALIDATION.md](VALIDATION.md); those supersede the staged rollout wording below.
+Prepared 28 September 2026. Historical planning rationale, retained as review evidence. Later approvals added the optimized hot path, paper formats 3–4 and optional bounded real execution. [PRD.md](PRD.md), [README.md](../README.md), and [VALIDATION.md](VALIDATION.md) supersede this plan's original scope, proposed file layout and rollout order.
 
 **Confirmed scope: Hyperliquid spot conversion cycles, with public recording and replay before trading.** The user selected spot conversion cycles. A perpetual position is not a conversion into the underlying token; the existing perpetual discovery and execution adapters will not be used as spot conversion logic.
 
@@ -200,4 +200,4 @@ Completion means Binance is removed, the selected bounded universe is completely
 - [Order rejection rules, including quote-token minimum notional](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses)
 - [Connection and request limits](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits)
 
-Local evidence: `review/check.rs` (six reproduced failures), `review/hyperliquid_spot_snapshot.json`, the supplied review experiments, and the inspected XEMM source at the revision above. The supplied books and notes explain the graph model; they are not evidence of executable market profit.
+Local evidence: the original `review/check.rs` (six reproduced failures), now stored as `check.rs` inside `review/prototype-before-hyperliquid.zip`; `review/hyperliquid_spot_snapshot.json`; the supplied review experiments; and the inspected XEMM revision above. The supplied books and notes explain the graph model, not executable market profit.
