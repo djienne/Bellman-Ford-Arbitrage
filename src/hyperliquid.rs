@@ -88,8 +88,19 @@ pub async fn follow(
     cfg: Config,
     tx: mpsc::Sender<Wire>,
     clock: Arc<Clock>,
+    reconnect: mpsc::Receiver<u64>,
+    force_after: Option<u64>,
+) -> Result<()> {
+    follow_extra(coins, cfg, tx, clock, reconnect, force_after, vec![]).await
+}
+pub async fn follow_extra(
+    coins: Vec<String>,
+    cfg: Config,
+    tx: mpsc::Sender<Wire>,
+    clock: Arc<Clock>,
     mut reconnect: mpsc::Receiver<u64>,
     force_after: Option<u64>,
+    extra: Vec<String>,
 ) -> Result<()> {
     let mut generation = 0;
     let mut backoff = 1;
@@ -105,7 +116,7 @@ pub async fn follow(
                 let fast = cfg.l2_fast;
                 let mut messages = coins.iter().flat_map(|coin| {
                     ["bbo", "l2Book"].map(move |kind| subscription(coin, kind, fast))
-                });
+                }).chain(extra.iter().cloned());
                 let mut next = messages.next();
                 let mut pace = interval(Duration::from_millis(100));
                 let mut ping = interval(Duration::from_secs(20));

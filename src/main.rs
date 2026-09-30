@@ -52,6 +52,12 @@ async fn main() -> Result<()> {
 }
 async fn execute(args: &[String]) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("run");
+    if command == "live" {
+        #[cfg(feature = "live")]
+        return bellman_arb::live::run(&args[1..]).await;
+        #[cfg(not(feature = "live"))]
+        bail!("live commands require an explicit build with --features live");
+    }
     if command == "replay" {
         let dir = args.get(1).context(
             "usage: bellman-arb replay RUN_DIRECTORY [--latency-ms 100,250,500] [--verify]",
@@ -234,6 +240,7 @@ async fn execute(args: &[String]) -> Result<()> {
     engine.predecessor_run_id = predecessor.clone();
     let manifest = Manifest {
         format: 4,
+        observer_only: false,
         run_id: format!("run-{created}"),
         created_utc_ns: created,
         config: cfg.clone(),

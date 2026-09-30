@@ -1,0 +1,1 @@
+Error: live commands require an explicit build with --features live

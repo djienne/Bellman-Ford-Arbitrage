@@ -2,3 +2,5 @@
 /runs/
 /tmp/
 *.bak
+*.env
+!*.env.example

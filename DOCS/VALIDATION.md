@@ -169,3 +169,40 @@ The smoke recorded **five positive fee-net episodes**, peaking at **+4.4674 bps*
 Continuous collection remains on image `sha256:66569e843ca1ba4e1fed1bc7685d4ba4639cc43829d3963931478e5b3fd0468c`, 1 CPU, 512 MiB and `unless-stopped`. Embedded Rust/Cargo hashes match the workspace. The first two minutes after restart received **7,365 frames**, zero malformed books, p99 decision **1.960 ms**, and three unpaused 10,000-USDC accounts. No new-epoch paper entry was observed in that short interval. The daily follow-up now separates execution sources, epochs and old unresolved exposure. Recording occupied about **4.60 GiB** under the 50-GiB cap, approximately **11.45 days** remaining at the smoke rate; host disk had about 305 GiB free. These projections depend on activity.
 
 Compact release/benchmark/accounting/cutover evidence is in `review/2026-09-30-execution-model-4/`. Raw smoke data, fixed windows, counterfactual reports, diagnostic journals and runnable independent checks are in `runs/format4-validation/` and `runs/format4-smoke/`. Actual exchange execution latency, fee rounding and live profitability remain unverified. Keep all observation periods and paper epochs distinct.
+
+## Bounded mainnet spot execution (30 September 2026)
+
+Implemented the optional live feature without changing the continuous paper service or sibling XEMM stack. Default builds reject live dispatch; the live-capable build requires an explicit command, acknowledgement, session ID and finite limits. The real-money validation used a funded mainnet subaccount and did not invoke production `live run`.
+
+Evidence: `runs/live/spot-live-20260930-1350`, plus the compact public summary and independent calculation in `review/2026-09-30-bounded-live/`. The tested image was `sha256:239079ce1ca4af768d99507daea89ce55c8d8f9d6264df92f861a9184bbfdeaa`. The validation began at **2026-09-30 13:50:01.197 UTC**; its observer recording is `market/run-1790776201245026090`. Explicit recovery/cleanup used `market/run-1790776711999148173`, beginning at **13:58:31.999 UTC**. The interval between processes held confirmed HYPE exposure deliberately; its price change is part of the final result, not triangle profitability.
+
+| Check | Observed result |
+|---|---|
+| USDC → HYPE → USDT0 → USDC, up to 50 USDC | Three confirmed full IOC legs; one completed cycle |
+| USDC → USDE → HYPE → USDC, up to 50 USDC | Three confirmed full IOC legs; one completed cycle |
+| Post-only place/cancel | Resting order observed, canceled, zero fills |
+| Deliberately non-crossing IOC | Definitive zero-fill rejection, unchanged balances |
+| Lost acknowledgement | First USDE-leg response discarded; original order recovered without resubmission |
+| Interrupted first leg | Confirmed purchase preserved across process exit; read-only reconciliation followed by explicit reverse IOC |
+| Final exposure | No open orders, pending orders or live runner; confirmed bounded dust retained |
+
+The successful session used **11 signed actions and eight actual fills**. A separate Python Decimal calculation read raw WebSocket/REST fill observations, checked each fixed limit and quantity, and reproduced final balances to token precision. No hypothetical fill or initial-funds restoration was used.
+
+Final actual balances: **71.50019996 USDC**, **0.02880303 HYPE**, **0.73474002 USDE**, **0.00105553 USDT0**. USDC cash changed by **−3.50879565**; fresh bid marks valued the retained subminimum inventory at **3.223148286179 USDC**, giving an **indicative total change of −0.285647363821 USDC**. Marks were fresh by 189–393 ms. The inventory is not spendable USDC and its bid value is not realizable liquidation proceeds at these quantities. This result includes the two forced triangles and the interrupted-purchase unwind; it is execution validation, not an arbitrage-performance claim.
+
+| Local measurement, validation process | p50 | p99 | Samples |
+|---|---:|---:|---:|
+| Receipt to completed detector decision | 0.448 ms | 1.188 ms | 2,111 frames |
+| Queue age | 0.420 ms | 1.167 ms | 2,111 frames |
+| Order submission to HTTP response | 997.956 ms | 1,134.601 ms | 9 orders |
+| Prepared order to terminal fill/balance confirmation | 1,434.304 ms | 2,850.208 ms | 9 resolutions |
+| Execution-journal durable write | 3.040 ms | 7.391 ms | 77 events |
+
+The confirmation distribution includes the canceled and zero-fill probes; it is not matching-engine latency or a service guarantee. Cleanup's single reverse order returned in 965 ms and reconciled in 1,035 ms. All one-off execution containers inherited **1 CPU**, `cpu.max = 100000 100000`, and 512 MiB. Native CPU utilization was not captured; the independent continuous screener was sampled at 0.70–1.20% of a core. Live artifacts occupied **9,977,379 bytes** before later analysis outputs. Public-smoke CPU/volume evidence is saved separately. No synthetic latency was imposed on real execution, and no paper-timer lag sample is inferred from the absence of live simulated deadlines.
+
+Before this successful session, `runs/live/spot-live-20260930-1340` exposed an instrument problem: direct streaming serialization issued many small writes on the Windows Docker bind mount. The quote-age guard prevented order submission, and spot balances stayed exactly **75.00899561 USDC**. The journal now encodes one record into a buffer before writing and syncing. The old intent was explicitly reconciled with the venue as absent and its session closed without refunding or replacing accounts. The failed observer shutdown also identified a missing terminal checkpoint; the live observer now uses the existing durable terminal checkpoint contract. Both failed evidence and corrected evidence remain preserved.
+
+Release validation passed **68 tests**: 48 existing research checks, the unchanged allocation-free kernel test, and 19 transport/signing/live checks. These include actual-fee ledger conservation, duplicate/invalid fills, partial terminal recovery, lost-response recovery without submission, account locking, metadata identity remapping, durable-write failure and preservation of reservations. Original historical formats **1–4** verified, and both successful native observer recordings verified with zero paper accounts. Later clock-domain instrumentation excludes cross-process confirmations from latency distributions rather than fabricating a zero delay; CPU counters are included in future live reports.
+
+The continuous service remained running in epoch `bbo-ioc-v4-2026-09-30`, with all three 10,000-USDC paper accounts intact. Real-account balances, forced-test outcomes, retained dust and public/paper observation epochs remain separate.
+The final 60.0018-second public smoke (`runs/live-build-validation/public-smoke/run-1790778754041345606`) included one controlled reconnect, 5,198 frames, a clean terminal checkpoint and a verified replay. Of 210 structural routes, 30 received prices; among those, accumulated fresh-price coverage was 85.09% and full-L2 coverage 46.65%, including startup/reconnect downtime. Terminal instantaneous coverage is zero because Stop invalidates books. Receipt-to-decision p50/p99 was 0.466/1.380 ms; queue p50/p99 was 0.432/1.350 ms. There were no paper execution deadlines, so timer lag remains unsampled. Recorded volume was 4,531,739 bytes; sampled CPU was 1.57% of one core with 5.824 MiB resident usage. This smoke ran independently and did not replace the continuous paper epoch. The default image tag is restored to a build without the live feature; the optional validated capability remains explicitly buildable.

@@ -1,0 +1,48 @@
+{
+  "path": "runs/live-build-validation/public-smoke/run-1790778754041345606",
+  "engine_time_ns": 60001767564,
+  "frames": 5198,
+  "connections": 2,
+  "recording_complete": true,
+  "receipt_to_decision": {
+    "max_ns": 1945305,
+    "mean_ns": 534773,
+    "p50_us": 466,
+    "p95_us": 1059,
+    "p99_us": 1380,
+    "percentile_resolution_us": 1,
+    "samples": 5198
+  },
+  "queue_age": {
+    "max_ns": 1922043,
+    "mean_ns": 496096,
+    "p50_us": 432,
+    "p95_us": 1036,
+    "p99_us": 1350,
+    "percentile_resolution_us": 1,
+    "samples": 5198
+  },
+  "coverage": {
+    "depth_route_ns": 839688543967,
+    "depth_scope": "full_l2_traded_side; excludes BBO-only quantity",
+    "dormant_routes": 0,
+    "executable_depth_routes": 0,
+    "fresh_price_routes": 0,
+    "price_route_ns": 1531574636644,
+    "structural_routes": 210
+  },
+  "deadline_lag": {
+    "max_ns": 0,
+    "mean_ns": 0,
+    "p50_us": 0,
+    "p95_us": 0,
+    "p99_us": 0,
+    "percentile_resolution_us": 1,
+    "samples": 0
+  },
+  "bytes": 4531739,
+  "ever_priced_routes": 30,
+  "price_coverage_fraction_of_priced_routes": 0.8508497326129426,
+  "full_l2_coverage_fraction_of_priced_routes": 0.46647989331945294,
+  "terminal_snapshot_note": "Stop invalidates instantaneous coverage; use accumulated route durations."
+}

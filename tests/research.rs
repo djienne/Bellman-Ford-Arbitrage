@@ -459,6 +459,7 @@ fn recorded_v3() -> (std::path::PathBuf, std::path::PathBuf, Engine) {
         &root,
         Manifest {
             format: 3,
+            observer_only: false,
             run_id: "run-1".into(),
             created_utc_ns: 0,
             config: cfg.clone(),
@@ -537,6 +538,7 @@ fn v4_epochs_preserve_predecessor_and_never_repeat_funding() {
             &root,
             Manifest {
                 format: 4,
+                observer_only: false,
                 run_id: run_id.clone(),
                 created_utc_ns: 0,
                 config: e.config.clone(),
@@ -659,6 +661,7 @@ fn v3_clean_report_requires_durable_terminal_checkpoint() {
         &root,
         Manifest {
             format: 3,
+            observer_only: false,
             run_id: "run-1".into(),
             created_utc_ns: 0,
             config: cfg,
@@ -700,6 +703,7 @@ fn terminal_checkpoint_retains_reservation_and_refuses_reconciliation() {
         &root,
         Manifest {
             format: 3,
+            observer_only: false,
             run_id: "run-1".into(),
             created_utc_ns: 0,
             config: cfg,
@@ -1203,6 +1207,7 @@ fn restart_pointer_survives_a_backward_wall_clock() {
             &root,
             Manifest {
                 format: 2,
+                observer_only: false,
                 run_id: id.into(),
                 created_utc_ns: 0,
                 config: cfg.clone(),
@@ -1403,6 +1408,7 @@ fn journal_roundtrip_replays_actual_path() {
     ));
     let m = Manifest {
         format: 2,
+        observer_only: false,
         run_id: "run-1".into(),
         created_utc_ns: 0,
         config: cfg.clone(),
@@ -1600,6 +1606,7 @@ fn journal_limits_and_disk_errors_surface() {
     cfg.rotate_bytes = 1000;
     let make = |name: &str| Manifest {
         format: 2,
+        observer_only: false,
         run_id: name.into(),
         created_utc_ns: 0,
         config: cfg.clone(),
@@ -1709,6 +1716,7 @@ fn hot_pipeline_matches_reference_and_replays() {
             &root,
             Manifest {
                 format: model,
+                observer_only: false,
                 run_id: "run-1".into(),
                 created_utc_ns: 0,
                 config: cfg,
@@ -1975,6 +1983,7 @@ fn replay_preserves_legacy_shadow_model_and_uses_new_model_for_format_two() {
             &root,
             Manifest {
                 format,
+                observer_only: false,
                 run_id: format!("run-{format}"),
                 created_utc_ns: 0,
                 config: cfg.clone(),

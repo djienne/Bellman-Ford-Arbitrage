@@ -1,0 +1,99 @@
+   Compiling bellman-arb v0.2.0 (/app)
+    Finished `release` profile [optimized] target(s) in 1m 01s
+     Running unittests src/lib.rs (/build/release/deps/bellman_arb-8f05f287668c51cc)
+
+running 19 tests
+test hyperliquid::tests::depth_mode_is_explicit_and_legacy_config_remains_slow ... ok
+test hyperliquid::tests::overflow_returns_error_instead_of_silently_dropping_market_data ... ok
+test hl_sign::tests::sdk_digest_and_vault_expiry_vectors ... ok
+test live::tests::signer_lock_rejects_a_second_execution_owner ... ok
+test live::tests::terminal_status_keeps_unknown_distinct_from_zero_fill ... ok
+test live_client::tests::transport_loss_remains_unknown_and_never_retries_exchange ... ok
+test hyperliquid::tests::obsolete_reconnect_request_cannot_close_new_generation ... ok
+test live_client::tests::balances_use_numeric_token_identity_and_reject_holds ... ok
+test live_client::tests::duplicate_invalid_and_overbudget_fills_do_not_mutate_ledger ... ok
+test live_client::tests::actual_fee_tokens_and_partial_fills_conserve_inventory ... ok
+test live_client::tests::spot_wire_keeps_exact_tick_asset_and_reservation ... ok
+test live::tests::screening_constructor_never_funds_accounts ... ok
+test live::tests::checkpoint_preserves_reservation_and_unresolved_attempt ... ok
+test live::tests::metadata_reordering_keeps_explicit_route_and_balance_identities ... ok
+test live::tests::unrelated_metadata_removal_does_not_erase_exposure ... ok
+test live::tests::failed_durable_write_cannot_be_successful_intent ... ok
+test live_client::tests::fill_direction_limits_and_fee_identity_are_validated ... ok
+test live::tests::lost_ack_restart_recovers_actual_fill_once_without_submission ... ok
+test live::tests::partial_terminal_recovers_net_holdings_for_unwind ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/main.rs (/build/release/deps/bellman_arb-0b3a72ecacd56b2d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hot_alloc.rs (/build/release/deps/hot_alloc-442ef186a4fc285d)
+
+running 1 test
+test all_affected_cycles_without_hot_allocations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/research.rs (/build/release/deps/research-3b8f5c70c2c5f048)
+
+running 48 tests
+test bad_metadata_reference_is_rejected ... ok
+test bbo_does_not_refresh_stale_depth_or_pongs_refresh_books ... ok
+test bf_finds_forward_witness ... ok
+test clock_jump_does_not_change_monotonic_latency ... ok
+test decimal_fees_lots_and_minimum_notional ... ok
+test duplicate_display_names_do_not_merge_assets ... ok
+test empty_book_is_known_zero_fill_and_reappearance_replenishes ... ok
+test episode_end_has_no_grace_inflation ... ok
+test failed_unwind_retains_exposure_and_pauses_account ... ok
+test fast_snapshot_replaces_old_deep_liquidity ... ok
+test fractional_fee_and_threshold_are_unrounded ... ok
+test depth_coverage_expires_independently_and_empty_route_reactivates ... ok
+test future_quote_cannot_rewrite_arrival ... ok
+test invalid_prices_sizes_and_crosses_rejected ... ok
+test ioc_precision_never_exceeds_adverse_bound ... ok
+test latency_arrival_confirmation_and_conservation ... ok
+test metadata_remap_preserves_pending_orders_and_depletion ... ok
+test marked_inventory_is_not_cash_and_unknown_exposure_never_resumes ... ok
+test no_arbitrage_moving_single_market ... ok
+test older_cross_channel_update_cannot_refresh_liquidity ... ok
+test partial_fill_is_unwound_not_magically_restored ... ok
+test processing_delay_is_added_to_submission_and_replayed ... ok
+test production_fee_dust_continues_without_restoring_cash ... ok
+test overlapping_cycles_are_all_evaluated ... ok
+test restart_preserves_consumed_shadow_liquidity ... ok
+test subminimum_residual_is_preserved_as_inventory ... ok
+test recorded_bbo_failures_have_bounded_v4_outcomes ... ok
+test restart_keeps_reserved_funds_and_marks_pending_unresolved ... ok
+test v4_quantity_expiry_and_truncated_remainders_do_not_fabricate_fills ... ok
+test unavailable_arrival_is_censored ... ok
+test unchanged_snapshot_does_not_refill_shadow ... ok
+test v4_observed_zero_fill_waits_for_confirmation_and_excludes_later_quotes ... ok
+test truncated_snapshots_preserve_consumed_liquidity_on_both_sides ... ok
+test v4_side_validity_unknown_depth_and_zero_fill_are_conservative ... ok
+test v4_shadow_removal_and_replenishment_require_evidence ... ok
+test cycle_bound_and_capacity_are_explicit ... ok
+test all_210_route_identities_remain_observable ... ok
+test saved_metadata_identity_and_complete_cycles ... ok
+test v3_clean_report_requires_durable_terminal_checkpoint ... ok
+test terminal_checkpoint_retains_reservation_and_refuses_reconciliation ... ok
+test clean_checkpoint_and_forced_negative_replay_use_real_accounting ... ok
+test journal_roundtrip_replays_actual_path ... ok
+test journal_limits_and_disk_errors_surface ... ok
+test restart_pointer_survives_a_backward_wall_clock ... ok
+test replay_preserves_legacy_shadow_model_and_uses_new_model_for_format_two ... ok
+test v4_epochs_preserve_predecessor_and_never_repeat_funding ... ok
+test hot_pipeline_matches_reference_and_replays ... ok
+test quiet_feed_order_deadline_uses_one_shot_timer ... ok
+
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+   Doc-tests bellman_arb
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

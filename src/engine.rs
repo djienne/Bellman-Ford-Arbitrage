@@ -142,6 +142,14 @@ pub struct Engine {
     reconcile: Option<(u64, u64)>,
 }
 impl Engine {
+    /// Separate live processes use the detector without any simulated funding.
+    /// Ordinary constructors still validate every persisted paper scenario.
+    pub fn scanner(config: Config, universe: Universe) -> Result<Self> {
+        let mut engine = Self::new(config, universe, None)?;
+        engine.accounts.clear();
+        engine.model_version = 4;
+        Ok(engine)
+    }
     pub fn new(config: Config, universe: Universe, accounts: Option<Vec<Account>>) -> Result<Self> {
         config.validate()?;
         let routes = universe.routes(&config)?;

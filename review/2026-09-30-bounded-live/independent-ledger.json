@@ -1,0 +1,110 @@
+{
+  "independent_raw_fill_count": 8,
+  "ledger_conserved": true,
+  "completed_routes": {
+    "107B>207S>166S": 1,
+    "107S>150B>255B": 1
+  },
+  "actions": 11,
+  "cash_change_usdc": "-3.50879565",
+  "indicative_inventory_usdc": "3.223148286179",
+  "indicative_total_change_usdc": "-0.285647363821",
+  "fees_by_token": {
+    "HYPE": "0.00119697",
+    "USDT0": "0.03390447",
+    "USDC": "0.07451165",
+    "USDE": "0.00699998"
+  },
+  "final_balances": {
+    "USDC": "71.50019996",
+    "HYPE": "0.02880303",
+    "USDE": "0.73474002",
+    "USDT0": "0.00105553"
+  },
+  "orders": [
+    {
+      "market": "@107",
+      "buy": true,
+      "requested": "0.15",
+      "limit": "77.862",
+      "filled": "0",
+      "terminal": "canceled"
+    },
+    {
+      "market": "@107",
+      "buy": true,
+      "requested": "0.15",
+      "limit": "77.856",
+      "filled": "0",
+      "terminal": "rejected"
+    },
+    {
+      "market": "@107",
+      "buy": true,
+      "requested": "0.57",
+      "limit": "86.507",
+      "filled": "0.57",
+      "terminal": "filled"
+    },
+    {
+      "market": "@207",
+      "buy": false,
+      "requested": "0.56",
+      "limit": "86.473",
+      "filled": "0.56",
+      "terminal": "filled"
+    },
+    {
+      "market": "@166",
+      "buy": false,
+      "requested": "48.40",
+      "limit": "0.99935",
+      "filled": "48.4",
+      "terminal": "filled"
+    },
+    {
+      "market": "@150",
+      "buy": true,
+      "requested": "50",
+      "limit": "1.0000",
+      "filled": "50.0",
+      "terminal": "filled"
+    },
+    {
+      "market": "@255",
+      "buy": true,
+      "requested": "0.57",
+      "limit": "86.435",
+      "filled": "0.57",
+      "terminal": "filled"
+    },
+    {
+      "market": "@107",
+      "buy": false,
+      "requested": "0.56",
+      "limit": "86.429",
+      "filled": "0.56",
+      "terminal": "filled"
+    },
+    {
+      "market": "@107",
+      "buy": true,
+      "requested": "0.57",
+      "limit": "86.464",
+      "filled": "0.57",
+      "terminal": "filled"
+    },
+    {
+      "market": "@107",
+      "buy": false,
+      "requested": "0.56",
+      "limit": "85.938",
+      "filled": "0.56",
+      "terminal": "filled"
+    }
+  ],
+  "source_files": [
+    "runs/live/spot-live-20260930-1350/market/run-1790776201245026090/events-00000.jsonl",
+    "runs/live/spot-live-20260930-1350/market/run-1790776711999148173/events-00000.jsonl"
+  ]
+}

@@ -2,7 +2,7 @@
 
 This is an **arbitrage opportunity screener and paper trader** for Hyperliquid spot markets, built on the **Bellman–Ford** view of currency arbitrage: tokens are graph nodes, every market is a pair of directed edges weighted by `−ln(rate × (1 − fee))`, and a round trip that ends with more than it started with is a **negative-weight cycle**. It watches the public WebSocket feed, finds fee-positive conversion cycles of 3–6 trades (e.g. `USDC → HYPE → USDT0 → USDC`), and simulates executing them against recorded order books with realistic latency, depth, lot sizes and fees.
 
-**Paper only.** There are no order endpoints, no signing code, no keys and no real accounts. The point is to measure *whether, how often and for how long* such opportunities exist and survive latency, not to trade them.
+**Paper by default.** Continuous collection needs no credentials and sends no orders. An optional live feature provides explicitly armed, bounded spot execution tests and finite live sessions. Production live trading is disabled; the continuous service remains the paper screener.
 
 > **Status (30 Sep 2026 local time):** format 4 is running in independent epoch `bbo-ioc-v4-2026-09-30` with three unpaused 10,000-USDC accounts. The old paused accounts remain preserved. The first model-3 coverage review found 1,275 positive fee-net episodes, three entry-eligibility episodes and five attempts, with no completed full cycles. The format-4 ten-minute smoke and historical replays passed. See [current validation](DOCS/VALIDATION.md#execution-observability-format-4-and-independent-epoch) and [observation review](DOCS/OBSERVATION_REVIEW.md). Counterfactual results are separate from observed paper outcomes; live fill profitability remains unverified.
 
@@ -140,3 +140,28 @@ The executable keeps its historical name, `bellman-arb`.
 ## References
 
 [Spot metadata](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/spot) · [WebSocket subscriptions](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions) · [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees) · [Tick and lot size](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size) · [Order constraints](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses)
+
+## Bounded real spot execution
+
+The default build excludes signing. Build the optional feature explicitly for one-off tests:
+
+```powershell
+docker compose build --build-arg FEATURES=live screener
+docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live check
+.\live_preflight.ps1
+docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live validate --session spot-validation-ID --allow-real-orders
+# Validation deliberately exits after a confirmed first leg to test recovery.
+docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live reconcile --session spot-validation-ID
+.\live_preflight.ps1
+docker compose run --rm --no-deps -T -v ./hyperliquid.env:/run/secrets/hyperliquid.env:ro screener live cleanup --session spot-validation-ID --allow-real-orders
+```
+
+Use a fresh ID once. Reusing it cannot fund another account or repeat validation. Credentials stay local, ignored and mounted read-only; they are absent from the continuous service. These commands operate on **mainnet real money**, even though the chosen subaccount is used for testing. The sibling connector is reference code only; the preflight script only reads its Docker state.
+
+Validation permits 50-USDC opening allocations, a 5-USDC session loss stop, 32 signed actions with unwind reserves, two attempts per required triangle and a 30-minute entry deadline. It tests `USDC → HYPE → USDT0 → USDC` and `USDC → USDE → HYPE → USDC`, post-only cancellation, a non-crossing IOC, deliberately lost acknowledgement, and an interrupted first leg followed by explicit cleanup. Forced losses are diagnostic; they are not observed profitable arbitrage. Stops prevent new entries, not guaranteed maximum loss.
+
+Real legs use actual confirmed fills, fee tokens and reconciled spot balances, without simulated latency. Unknown orders are reconciled by their original IDs and never resent. Explicit cleanup permits two orders per reverse leg and a 120-second deadline. Confirmed residuals remain inventory; marks use fresh direct-USDC bids and are never spendable. Dust checks consider authorized exits, and pause at more than 5 USDC, unknown marks or material holdings. The shared XEMM key may be used only while its live trading is inactive; a per-signer file lock prevents duplicate owners in this project. Foreign orders, fills or unexplained balance changes block new trading.
+
+Evidence is separate in `runs/live/<session>/`: durable intents, responses, actual fills, balance checkpoints and an observer-only public/account tape. Its tape can be verified with ordinary `replay --verify`; it cannot create counterfactual paper accounts. Live recovery never advances an old forward route automatically. Storage failure stops inventory orders; only cancellation of this session's resting orders is attempted without a durable intent, leaving recovery explicitly unresolved.
+
+`live run` is available for a future **explicitly authorized finite session**, requiring `--session`, `--allow-real-orders`, `--routes`, `--amount-usdc`, `--loss-usdc` and `--duration`. It retains the five-bps cash threshold and route ranking, with one real account and one attempt per eligibility episode. Size is bounded to 12–50 USDC, loss stop to at most 5 USDC and duration to at most 1,800 seconds. It is not installed as a service and is not started by Compose. The public screener and its three paper accounts continue independently.

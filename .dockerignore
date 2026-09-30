@@ -4,3 +4,4 @@ tmp
 DOCS
 review/*.zip
 .git
+*.env

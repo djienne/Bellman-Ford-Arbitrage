@@ -1,0 +1,127 @@
+{
+  "native_test_image": "sha256:239079ce1ca4af768d99507daea89ce55c8d8f9d6264df92f861a9184bbfdeaa",
+  "session": "runs/live/spot-live-20260930-1350",
+  "test_started_utc": "2026-09-30T13:50:01.1970000Z",
+  "phase": "validation_complete",
+  "opening_limit_usdc": "50",
+  "loss_stop_usdc": "5",
+  "actions": 11,
+  "completed_routes": {
+    "107B>207S>166S": 1,
+    "107S>150B>255B": 1
+  },
+  "unresolved_orders": 0,
+  "open_orders_after": 0,
+  "cash_change_usdc": "-3.50879565",
+  "inventory": {
+    "all_dust": true,
+    "indicative_usdc": "3.223148286179",
+    "marks": [
+      {
+        "exchange_ms": 1790776720542,
+        "indicative_usdc": "2.48757368595",
+        "quantity": "0.02880303",
+        "receipt_age_ns": 188711815,
+        "source": "@107",
+        "token": 150,
+        "untradeable_dust": true
+      },
+      {
+        "exchange_ms": 1790776720263,
+        "indicative_usdc": "0.734519597994",
+        "quantity": "0.73474002",
+        "receipt_age_ns": 393341577,
+        "source": "@150",
+        "token": 235,
+        "untradeable_dust": true
+      },
+      {
+        "exchange_ms": 1790776720263,
+        "indicative_usdc": "0.001055002235",
+        "quantity": "0.00105553",
+        "receipt_age_ns": 393339223,
+        "source": "@166",
+        "token": 268,
+        "untradeable_dust": true
+      }
+    ]
+  },
+  "validation_timing": {
+    "receipt_to_decision": {
+      "max_ns": 3694156,
+      "mean_ns": 497660,
+      "p50_us": 448,
+      "p95_us": 992,
+      "p99_us": 1188,
+      "percentile_resolution_us": 1,
+      "samples": 2111
+    },
+    "queue_age": {
+      "max_ns": 3660286,
+      "mean_ns": 469652,
+      "p50_us": 420,
+      "p95_us": 969,
+      "p99_us": 1167,
+      "percentile_resolution_us": 1,
+      "samples": 2111
+    },
+    "submission_response": {
+      "max_ns": 1134601120,
+      "mean_ns": 997657535,
+      "p50_us": 997956,
+      "p95_us": 1134601,
+      "p99_us": 1134601,
+      "percentile_resolution_us": 1,
+      "samples": 9
+    },
+    "fill_and_balance_confirmation": {
+      "max_ns": 2850208432,
+      "mean_ns": 1641702069,
+      "p50_us": 1434304,
+      "p95_us": 2850208,
+      "p99_us": 2850208,
+      "percentile_resolution_us": 1,
+      "samples": 9
+    },
+    "durable_write": {
+      "max_ns": 7391880,
+      "mean_ns": 2965876,
+      "p50_us": 3040,
+      "p95_us": 6155,
+      "p99_us": 7391,
+      "percentile_resolution_us": 1,
+      "samples": 77
+    }
+  },
+  "cleanup_timing": {
+    "receipt_to_decision": {
+      "max_ns": 1204601,
+      "mean_ns": 406372,
+      "p50_us": 334,
+      "p95_us": 963,
+      "p99_us": 1151,
+      "percentile_resolution_us": 1,
+      "samples": 513
+    },
+    "submission_response": {
+      "max_ns": 965157919,
+      "mean_ns": 965157919,
+      "p50_us": 965157,
+      "p95_us": 965157,
+      "p99_us": 965157,
+      "percentile_resolution_us": 1,
+      "samples": 1
+    },
+    "fill_and_balance_confirmation": {
+      "max_ns": 1034825838,
+      "mean_ns": 1034825838,
+      "p50_us": 1034825,
+      "p95_us": 1034825,
+      "p99_us": 1034825,
+      "percentile_resolution_us": 1,
+      "samples": 1
+    }
+  },
+  "cpu_quota": "100000 100000",
+  "production_started": false
+}

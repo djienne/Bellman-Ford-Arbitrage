@@ -1,0 +1,2 @@
+bellman-live-public-smoke|1.57%|5.824MiB / 512MiB
+bellman-hyperliquid-screener|0.70%|10.11MiB / 512MiB

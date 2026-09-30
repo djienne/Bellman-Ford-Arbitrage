@@ -1,10 +1,11 @@
 FROM rust:1.92-bookworm AS build
+ARG FEATURES=""
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY tests ./tests
 COPY review/hyperliquid_spot_snapshot.json ./review/hyperliquid_spot_snapshot.json
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo build --release --locked && cp target/release/bellman-arb /usr/local/bin/bellman-arb
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo build --release --locked --features "$FEATURES" && cp target/release/bellman-arb /usr/local/bin/bellman-arb
 RUN sha256sum src/*.rs Cargo.toml Cargo.lock > SOURCE_SHA256
 
 FROM debian:bookworm-slim AS runtime

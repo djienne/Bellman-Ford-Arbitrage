@@ -1,6 +1,6 @@
 # Hyperliquid spot screener and paper research
 
-Updated 30 September 2026. This document replaces the original Binance/Bellman–Ford-only product specification. The approved task is a public, continuously running spot-cycle screener and causal paper simulator, with no real-order capability.
+Updated 30 September 2026. This document replaces the original Binance/Bellman–Ford-only product specification. The default application is a public, continuously running spot-cycle screener and causal paper simulator. An optional, explicitly armed live feature adds bounded spot execution; it does not enable production trading or change the paper accounts.
 
 ## Purpose and scope
 
@@ -43,3 +43,9 @@ Release Docker checks must cover saved metadata's 210 cycles, explicit identity 
 Complete a ten-minute public smoke run with controlled reconnect, verify replay, then start continuous collection. Review 24-hour coverage and collect seven healthy days across conditions. These observation milestones do not block engineering completion. Quiet periods do not rule out rare opportunities, and public-feed paper outcomes do not establish live fill profitability.
 
 Implementation and operational details: [README](../README.md). Measured checks: [validation](VALIDATION.md). Historical rationale: [original fix plan](HYPERLIQUID_FIX_PLAN.md).
+
+## Optional bounded real execution
+
+The optional `live` build feature adds one concrete Hyperliquid spot owner with explicit acknowledgement and finite limits. It reuses discovery, public books, the hot detector and Decimal order preparation; actual private fills, fee tokens and reconciled balances replace paper arrivals. Signing and HTTP stay outside the hot kernel. Nonces and intents are durable before submission; unknown outcomes are reconciled without resending. API order/fill/spot-state subscriptions support confirmation, with bounded REST recovery.
+
+Validation uses the two authorized 50-USDC triangles, a five-USDC loss stop, 32-action cap, no concurrent real attempts and no funding transfers. A controlled confirmed first leg remains reserved across process exit and requires read-only reconciliation plus explicit reverse cleanup. Live evidence and pointers stay under `runs/live`, independently of historical paper epochs. Dust is conservatively marked over authorized exits; unknown/material residuals block further entries. The default service remains paper, has no mounted credentials and never automatically starts or restarts a live command. Real-money test outcomes are operational evidence, separate from screened opportunities and profitability claims.

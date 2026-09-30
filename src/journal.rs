@@ -22,6 +22,8 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub format: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub observer_only: bool,
     pub run_id: String,
     pub created_utc_ns: u64,
     pub config: Config,
@@ -36,6 +38,7 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub predecessor_run_id: Option<String>,
 }
+fn is_false(v: &bool) -> bool { !*v }
 #[derive(Serialize, Deserialize)]
 pub struct Record {
     pub input: Input,
@@ -319,7 +322,12 @@ pub fn replay_model(
     } else {
         m.initial_accounts
     };
-    let mut engine = Engine::new(cfg, m.universe, initial)?;
+    let mut engine = if m.observer_only {
+        ensure!(!alternative && initial.as_ref().is_some_and(Vec::is_empty), "observer tape cannot create paper accounts");
+        Engine::scanner(cfg, m.universe)?
+    } else {
+        Engine::new(cfg, m.universe, initial)?
+    };
     engine.legacy_shadow = m.format == 1 && !alternative;
     engine.model_version = if alternative {
         model.unwrap_or(4)
