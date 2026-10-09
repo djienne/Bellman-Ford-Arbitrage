@@ -62,6 +62,15 @@ docker compose run --rm screener replay runs/run-... --execution-model 5
 
 `--verify` re-checks every recorded engine event under the original assumptions. Latency, freshness, execution-model or forced-entry overrides use fresh, independent accounts and cannot be combined with `--verify`. Observer-only live tapes permit exact replay only; replay never modifies the evidence.
 
+The default paper service now reads Hyperliquid books through the shared
+`../HYPERLIQUID_DATA` hub. New format-6 journals store central event references
+and the bot's own receipt clocks, decisions and account state. Replay/recovery
+resolves exact frames through `HL_ARCHIVE_HTTP` (set by Compose); missing or
+expired data fails explicitly. The central archive retains 90 days: preserve
+referenced partitions before expiry if a run must remain replayable longer.
+Old full-frame journals remain supported. Paper accounting remains model 5;
+changing the journal format does not restart the account epoch.
+
 To exercise execution on negative-edge data, force a route (take a real ID from `discover`; the one below is illustrative):
 
 ```powershell

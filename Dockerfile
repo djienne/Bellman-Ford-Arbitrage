@@ -9,6 +9,9 @@ COPY review/hyperliquid_spot_snapshot.json ./review/hyperliquid_spot_snapshot.js
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo build --release --locked --features "$FEATURES" --bin bellman-arb --example depth_probe && cp target/release/bellman-arb /usr/local/bin/bellman-arb && cp target/release/examples/depth_probe /usr/local/bin/depth-probe
 RUN sha256sum src/*.rs examples/*.rs Cargo.toml Cargo.lock > SOURCE_SHA256
 
+FROM build AS central-checks
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo test --release --locked
+
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=build /etc/ssl/certs /etc/ssl/certs

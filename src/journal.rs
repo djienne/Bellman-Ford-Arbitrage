@@ -47,6 +47,87 @@ pub struct Record {
     pub completed_ns: u64,
     pub events: Vec<Value>,
 }
+
+fn record_bytes(record: &Record, format: u32) -> Result<Vec<u8>> {
+    let mut stored = serde_json::to_value(record)?;
+    if format == 6 {
+        if let InputKind::Frame { text } = &record.input.event {
+            let frame: Value = serde_json::from_str(text)?;
+            if let Some(reference) = frame.get("_hub") {
+                stored["input"]["event"]["text"] = serde_json::to_string(&serde_json::json!({"_hub_ref":reference}))?.into();
+            }
+        }
+    }
+    Ok(serde_json::to_vec(&stored)?)
+}
+
+/// Run journals retain decisions and receipt clocks; raw public frames live once
+/// in the 90-day central archive. A missing event blocks replay/recovery explicitly.
+#[derive(Default)]
+struct ArchiveReader {
+    cache: std::collections::VecDeque<(String, std::collections::HashMap<String, String>)>,
+}
+impl ArchiveReader {
+    fn hydrate(&mut self, event: &mut InputKind) -> Result<()> {
+        let InputKind::Frame { text } = event else { return Ok(()) };
+        if !text.starts_with("{\"_hub_ref\":") { return Ok(()) }
+        let value: Value = serde_json::from_str(text)?;
+        let reference = &value["_hub_ref"];
+        let partition = reference["partition"].as_str().context("missing archive partition")?;
+        let id = reference["event_id"].as_str().context("missing archive event ID")?;
+        let at = reference["received_ns"].as_u64().context("missing archive receipt clock")?;
+        let minute = at / 60_000_000_000 * 60_000_000_000;
+        let key = format!("{partition}:{minute}");
+        if !self.cache.iter().any(|(k, _)| k == &key) {
+            let origin = std::env::var("HL_ARCHIVE_HTTP").context("HL_ARCHIVE_HTTP required to replay central references")?;
+            let partition = partition.to_string();
+            // Replay also runs inside Tokio during recovery. Resolve on a separate
+            // thread using the already installed async client, without nesting runtimes.
+            let frames = std::thread::spawn(move || -> Result<std::collections::HashMap<String, String>> {
+                tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
+                    Ok(reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?
+                        .get(format!("{}/events", origin.trim_end_matches('/')))
+                        .query(&[("partition", partition), ("minute_ns", minute.to_string())])
+                        .send().await?.error_for_status()?.json().await?)
+                })
+            }).join().map_err(|_| anyhow::anyhow!("archive reader thread failed"))??;
+            self.cache.push_back((key.clone(), frames));
+            if self.cache.len() > 128 { self.cache.pop_front(); }
+        }
+        *text = self.cache.iter().find(|(k, _)| k == &key).and_then(|(_, v)| v.get(id))
+            .context("canonical event unavailable or expired; replay is incomplete")?.clone();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod central_tests {
+    use super::*;
+
+    #[test]
+    fn references_reconstruct_exact_frames_and_preserve_consumer_clocks() {
+        let original = serde_json::json!({"channel":"bbo","data":{"coin":"@107","time":1,
+            "bbo":[{"px":"100.01","sz":"123456789.25"},{"px":"101","sz":"2"}]},
+            "_hub":{"event_id":"session:1","partition":"events/@107/bbo/2026-10-01/00","received_ns":1}}).to_string();
+        let record = Record { input: Input { sequence: 1, generation: 1, receipt_ns: 99,
+            receipt_utc_ns: 101, process_ns: 103, hot_started_ns: 104, hot_done_ns: 105,
+            event: InputKind::Frame { text: original.clone() } }, completed_ns: 106, events: vec![] };
+        let bytes = record_bytes(&record, 6).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("123456789.25"));
+        let mut restored: Record = serde_json::from_slice(&bytes).unwrap();
+        let key = "events/@107/bbo/2026-10-01/00:0".to_string();
+        let mut reader = ArchiveReader::default();
+        reader.cache.push_back((key.clone(), std::collections::HashMap::from([("session:1".into(), original.clone())])));
+        reader.hydrate(&mut restored.input.event).unwrap();
+        assert_eq!(serde_json::to_value(&restored).unwrap(), serde_json::to_value(&record).unwrap());
+        reader.cache.clear();
+        reader.cache.push_back((key, std::collections::HashMap::new()));
+        let mut missing: Record = serde_json::from_slice(&bytes).unwrap();
+        assert!(reader.hydrate(&mut missing.input.event).unwrap_err().to_string().contains("unavailable or expired"));
+        let legacy: Record = serde_json::from_slice(&record_bytes(&record, 5).unwrap()).unwrap();
+        assert!(matches!(legacy.input.event, InputKind::Frame { text } if text == original));
+    }
+}
 enum WriteItem {
     Record(Record),
     Summary(Value),
@@ -181,7 +262,7 @@ fn writer(
     loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
             Ok(WriteItem::Record(r)) => {
-                let mut line = serde_json::to_vec(&r)?;
+                let mut line = record_bytes(&r, manifest.format)?;
                 line.push(b'\n');
                 ensure!(
                     total + line.len() as u64 + 1024 <= cfg.record_limit_bytes,
@@ -308,7 +389,7 @@ pub fn replay_model(
     );
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=5), "unsupported recording format");
+    ensure!(matches!(m.format, 1..=6), "unsupported recording format");
     let mut cfg = m.config;
     if let Some(ms) = quote_ms {
         cfg.quote_age_ms = ms;
@@ -335,9 +416,9 @@ pub fn replay_model(
     };
     engine.legacy_shadow = m.format == 1 && !alternative;
     engine.model_version = if alternative {
-        model.unwrap_or(m.format.max(4))
+        model.unwrap_or(m.format.clamp(4, 5))
     } else {
-        m.format
+        m.format.min(5)
     };
     if !alternative {
         engine.paper_epoch = m.paper_epoch;
@@ -358,6 +439,7 @@ pub fn replay_model(
     let mut rates = Vec::with_capacity(engine.routes.len());
     let files = event_files(dir)?;
     let mut available = 0;
+    let mut archive = ArchiveReader::default();
     for (fi, path) in files.iter().enumerate() {
         let mut reader = BufReader::new(File::open(path)?);
         loop {
@@ -371,6 +453,7 @@ pub fn replay_model(
                 break;
             }
             let mut rec: Record = serde_json::from_str(&line).context("corrupt journal record")?;
+            archive.hydrate(&mut rec.input.event)?;
             if alternative {
                 while let Some(at) = engine
                     .deadline()
@@ -480,7 +563,7 @@ fn validate_checkpoint(m: &Manifest, report: &Value, terminal: &Record) -> Resul
     );
     ensure!(
         c["run_id"] == m.run_id
-            && c["accounting_version"] == m.format
+            && c["accounting_version"] == m.format.min(5)
             && c["sequence"].as_u64() == Some(terminal.input.sequence),
         "checkpoint identity mismatch"
     );
@@ -529,7 +612,7 @@ fn last_record(path: &Path) -> Result<Record> {
 pub fn recover(dir: &Path) -> Result<(Universe, Vec<Account>)> {
     let m: Manifest =
         serde_json::from_reader(BufReader::new(File::open(dir.join("manifest.json"))?))?;
-    ensure!(matches!(m.format, 1..=5), "unsupported recovery format");
+    ensure!(matches!(m.format, 1..=6), "unsupported recovery format");
     if m.format >= 3 && dir.join("final.json").exists() {
         let report: Value =
             serde_json::from_reader(BufReader::new(File::open(dir.join("final.json"))?))?;

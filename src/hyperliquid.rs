@@ -109,15 +109,20 @@ pub async fn follow_extra(
     loop {
         generation += 1;
         let began = Instant::now();
-        let socket = timeout(Duration::from_secs(10), connect_async(WS)).await;
+        // Account subscriptions of the explicitly armed live tool stay direct.
+        // The continuously running public screener uses the shared market feed.
+        let url = if extra.is_empty() { std::env::var("HL_PUBLIC_WS").unwrap_or_else(|_| WS.into()) } else { WS.into() };
+        let socket = timeout(Duration::from_secs(10), connect_async(&url)).await;
         let result: Result<()> = match socket {
             Ok(Ok((ws, _))) => {
                 send(&tx, &clock, generation, InputKind::Open)?;
                 let (mut write, mut read) = ws.split();
                 let fast = cfg.l2_fast;
-                let mut messages = coins.iter().flat_map(|coin| {
+                let registration = (extra.is_empty() && url != WS)
+                    .then(|| json!({"method":"register", "coins":coins}).to_string());
+                let mut messages = registration.into_iter().chain(coins.iter().flat_map(|coin| {
                     ["bbo", "l2Book"].map(move |kind| subscription(coin, kind, fast))
-                }).chain(extra.iter().cloned());
+                })).chain(extra.iter().cloned());
                 let mut next = messages.next();
                 let mut pace = interval(Duration::from_millis(100));
                 let mut ping = interval(Duration::from_secs(20));

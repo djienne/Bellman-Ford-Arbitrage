@@ -265,7 +265,7 @@ async fn execute(args: &[String]) -> Result<()> {
     engine.paper_epoch = epoch.clone();
     engine.predecessor_run_id = predecessor.clone();
     let manifest = Manifest {
-        format: 5,
+        format: if std::env::var_os("HL_PUBLIC_WS").is_some() { 6 } else { 5 },
         observer_only: false,
         run_id: format!("run-{created}"),
         created_utc_ns: created,
